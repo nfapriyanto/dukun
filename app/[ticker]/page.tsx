@@ -147,6 +147,15 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
     return { sell, neutral, buy };
   };
 
+  const getPivotValue = (type: string, key: "r3" | "r2" | "r1" | "pivot" | "s1" | "s2" | "s3") => {
+    if (!symbolDetail || !symbolDetail.pivotPoints) return "—";
+    const p = symbolDetail.pivotPoints.find(item => item.pivotType.toLowerCase() === type.toLowerCase());
+    if (!p) return "—";
+    const val = p[key];
+    if (val === null || val === undefined) return "—";
+    return val.toLocaleString("id-ID");
+  };
+
   const oscCounts = symbolDetail ? getCounts(symbolDetail.oscillators) : { sell: 0, neutral: 0, buy: 0 };
   const maCounts = symbolDetail ? getCounts(symbolDetail.movingAverages) : { sell: 0, neutral: 0, buy: 0 };
   const summaryCounts = {
@@ -348,32 +357,81 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                   Pivot Points Support & Resistance
                 </h3>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs font-mono text-left whitespace-nowrap min-w-[600px]">
+                  <table className="w-full text-xs font-mono text-left whitespace-nowrap min-w-[500px]">
                     <thead>
                       <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
-                        <th className="pb-2.5 font-normal">Pivot Type</th>
-                        <th className="text-right pb-2.5 font-normal">S3</th>
-                        <th className="text-right pb-2.5 font-normal">S2</th>
-                        <th className="text-right pb-2.5 font-normal">S1</th>
-                        <th className="text-right pb-2.5 font-normal font-bold text-zinc-400">Pivot</th>
-                        <th className="text-right pb-2.5 font-normal">R1</th>
-                        <th className="text-right pb-2.5 font-normal">R2</th>
-                        <th className="text-right pb-2.5 font-normal">R3</th>
+                        <th className="pb-2.5 font-normal">Pivot</th>
+                        <th className="text-right pb-2.5 font-normal">Classic</th>
+                        <th className="text-right pb-2.5 font-normal">Fibonacci</th>
+                        <th className="text-right pb-2.5 font-normal">Camarilla</th>
+                        <th className="text-right pb-2.5 font-normal">Woodie</th>
+                        <th className="text-right pb-2.5 font-normal">DM</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-900">
-                      {symbolDetail?.pivotPoints.map((p) => (
-                        <tr key={p.pivotType} className="hover:bg-zinc-900/10">
-                          <td className="py-3 font-semibold text-zinc-300">{p.pivotType}</td>
-                          <td className="py-3 text-right text-rose-500/70">{p.s3?.toLocaleString("id-ID") || "—"}</td>
-                          <td className="py-3 text-right text-rose-500/70">{p.s2?.toLocaleString("id-ID") || "—"}</td>
-                          <td className="py-3 text-right text-rose-450">{p.s1?.toLocaleString("id-ID") || "—"}</td>
-                          <td className="py-3 text-right text-white font-bold bg-zinc-900/40 px-2 rounded">{p.pivot?.toLocaleString("id-ID") || "—"}</td>
-                          <td className="py-3 text-right text-emerald-450">{p.r1?.toLocaleString("id-ID") || "—"}</td>
-                          <td className="py-3 text-right text-emerald-500/70">{p.r2?.toLocaleString("id-ID") || "—"}</td>
-                          <td className="py-3 text-right text-emerald-500/70">{p.r3?.toLocaleString("id-ID") || "—"}</td>
-                        </tr>
-                      ))}
+                      {/* R3 Row */}
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-emerald-400">R3</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Classic", "r3")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Fibonacci", "r3")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Camarilla", "r3")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Woodie", "r3")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Demark", "r3")}</td>
+                      </tr>
+                      {/* R2 Row */}
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-emerald-400">R2</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Classic", "r2")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Fibonacci", "r2")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Camarilla", "r2")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Woodie", "r2")}</td>
+                        <td className="py-3 text-right text-emerald-500/70">{getPivotValue("Demark", "r2")}</td>
+                      </tr>
+                      {/* R1 Row */}
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-emerald-450">R1</td>
+                        <td className="py-3 text-right text-emerald-450">{getPivotValue("Classic", "r1")}</td>
+                        <td className="py-3 text-right text-emerald-450">{getPivotValue("Fibonacci", "r1")}</td>
+                        <td className="py-3 text-right text-emerald-450">{getPivotValue("Camarilla", "r1")}</td>
+                        <td className="py-3 text-right text-emerald-450">{getPivotValue("Woodie", "r1")}</td>
+                        <td className="py-3 text-right text-emerald-450">{getPivotValue("Demark", "r1")}</td>
+                      </tr>
+                      {/* P Row */}
+                      <tr className="hover:bg-zinc-900/10 font-bold bg-zinc-900/40">
+                        <td className="py-3 font-bold text-white pl-2 rounded-l">P</td>
+                        <td className="py-3 text-right text-white px-2">{getPivotValue("Classic", "pivot")}</td>
+                        <td className="py-3 text-right text-white px-2">{getPivotValue("Fibonacci", "pivot")}</td>
+                        <td className="py-3 text-right text-white px-2">{getPivotValue("Camarilla", "pivot")}</td>
+                        <td className="py-3 text-right text-white px-2">{getPivotValue("Woodie", "pivot")}</td>
+                        <td className="py-3 text-right text-white px-2 rounded-r">{getPivotValue("Demark", "pivot")}</td>
+                      </tr>
+                      {/* S1 Row */}
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-rose-450">S1</td>
+                        <td className="py-3 text-right text-rose-450">{getPivotValue("Classic", "s1")}</td>
+                        <td className="py-3 text-right text-rose-450">{getPivotValue("Fibonacci", "s1")}</td>
+                        <td className="py-3 text-right text-rose-450">{getPivotValue("Camarilla", "s1")}</td>
+                        <td className="py-3 text-right text-rose-450">{getPivotValue("Woodie", "s1")}</td>
+                        <td className="py-3 text-right text-rose-450">{getPivotValue("Demark", "s1")}</td>
+                      </tr>
+                      {/* S2 Row */}
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-rose-500/70">S2</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Classic", "s2")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Fibonacci", "s2")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Camarilla", "s2")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Woodie", "s2")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Demark", "s2")}</td>
+                      </tr>
+                      {/* S3 Row */}
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-rose-500/70">S3</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Classic", "s3")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Fibonacci", "s3")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Camarilla", "s3")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Woodie", "s3")}</td>
+                        <td className="py-3 text-right text-rose-500/70">{getPivotValue("Demark", "s3")}</td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
