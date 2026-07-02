@@ -58,7 +58,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
       <div className="bg-zinc-900/50 border border-zinc-800/80 p-6 rounded-2xl flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-zinc-700/60 transition-all duration-300">
         <div className="absolute top-0 left-0 w-full h-[3px] transition-all duration-300 group-hover:h-[5px]" style={{ backgroundColor: color }} />
         <span className="text-xs font-mono text-zinc-400 font-semibold tracking-wider uppercase mb-2">{title}</span>
-        
+
         <div className="relative flex items-center justify-center h-24 w-36 overflow-hidden mt-2">
           <svg className="w-full h-full" viewBox="0 0 100 50">
             <path
@@ -167,7 +167,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased relative">
       {hoveredIndicator && (
-        <div 
+        <div
           className="fixed z-50 max-w-xs p-3 bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs rounded-xl shadow-2xl pointer-events-none"
           style={{ top: hoveredIndicator.y + 15, left: Math.min(hoveredIndicator.x + 15, window.innerWidth - 300) }}
         >
@@ -186,7 +186,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
             <ChevronLeft className="h-4 w-4" />
             <span>Back to Screener</span>
           </button>
-          
+
           <div className="text-center">
             <h1 className="text-xl font-bold tracking-tight text-white">{ticker} Technical analysis</h1>
           </div>
@@ -197,7 +197,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
 
       {/* Detail Content */}
       <main className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-10">
-        
+
         {/* Profile Card & Recommendation summary */}
         {loading ? (
           <div className="py-20 flex justify-center">
@@ -207,9 +207,25 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
           <>
             {/* Header info card */}
             <div className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <h2 className="text-3xl font-bold text-zinc-100">{ticker}</h2>
-                <p className="text-xs text-zinc-500 mt-1">PT Bursa Efek Indonesia (IDX) Stock Technicals Analysis Summary</p>
+              <div className="flex items-center">
+                {symbolDetail?.logoId ? (
+                  <img
+                    src={`https://s3-symbol-logo.tradingview.com/${symbolDetail.logoId}.svg`}
+                    alt={ticker}
+                    className="h-12 w-12 rounded-full bg-zinc-900 border border-zinc-800 object-cover mr-4"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div className="h-12 w-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center font-mono font-bold text-sm text-zinc-500 mr-4">
+                    {ticker.slice(0, 2)}
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-3xl font-bold text-zinc-100">{ticker}</h2>
+                  <p className="text-xs text-zinc-500 mt-1">PT Bursa Efek Indonesia (IDX) Stock Technicals Analysis Summary</p>
+                </div>
               </div>
               <div className="text-right">
                 <span className="block text-[10px] font-mono text-zinc-505 uppercase tracking-wider">Last Price</span>
@@ -233,11 +249,10 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                 <button
                   key={tf}
                   onClick={() => setDetailTimeframe(tf)}
-                  className={`px-3 py-1.5 text-xs font-bold font-mono rounded-lg border transition-all ${
-                    detailTimeframe === tf
+                  className={`px-3 py-1.5 text-xs font-bold font-mono rounded-lg border transition-all ${detailTimeframe === tf
                       ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                       : "text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-900/60"
-                  }`}
+                    }`}
                 >
                   {tf}
                 </button>
@@ -246,7 +261,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
 
             {/* Technical Detail tables */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              
+
               {/* Oscillators List */}
               <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col">
                 <h3 className="text-sm font-mono text-zinc-350 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
@@ -269,11 +284,10 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                           {typeof osc.value === "number" ? osc.value.toFixed(2) : osc.value || "—"}
                         </td>
                         <td className="py-3 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            osc.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
-                            osc.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
-                            "bg-zinc-900/60 text-zinc-500 border border-zinc-800/40"
-                          }`}>
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${osc.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
+                              osc.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
+                                "bg-zinc-900/60 text-zinc-500 border border-zinc-800/40"
+                            }`}>
                             {osc.action}
                           </span>
                         </td>
@@ -321,11 +335,10 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                           {typeof ma.value === "number" ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(ma.value) : ma.value || "—"}
                         </td>
                         <td className="py-3 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            ma.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
-                            ma.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
-                            "bg-zinc-900/60 text-zinc-500 border border-zinc-800/40"
-                          }`}>
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${ma.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
+                              ma.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
+                                "bg-zinc-900/60 text-zinc-500 border border-zinc-800/40"
+                            }`}>
                             {ma.action}
                           </span>
                         </td>
@@ -397,13 +410,13 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                         <td className="py-3 text-right text-emerald-450">{getPivotValue("Demark", "r1")}</td>
                       </tr>
                       {/* P Row */}
-                      <tr className="hover:bg-zinc-900/10 font-bold bg-zinc-900/40">
-                        <td className="py-3 font-bold text-white pl-2 rounded-l">P</td>
-                        <td className="py-3 text-right text-white px-2">{getPivotValue("Classic", "pivot")}</td>
-                        <td className="py-3 text-right text-white px-2">{getPivotValue("Fibonacci", "pivot")}</td>
-                        <td className="py-3 text-right text-white px-2">{getPivotValue("Camarilla", "pivot")}</td>
-                        <td className="py-3 text-right text-white px-2">{getPivotValue("Woodie", "pivot")}</td>
-                        <td className="py-3 text-right text-white px-2 rounded-r">{getPivotValue("Demark", "pivot")}</td>
+                      <tr className="hover:bg-zinc-900/10">
+                        <td className="py-3 font-semibold text-white">P</td>
+                        <td className="py-3 text-right text-white">{getPivotValue("Classic", "pivot")}</td>
+                        <td className="py-3 text-right text-white">{getPivotValue("Fibonacci", "pivot")}</td>
+                        <td className="py-3 text-right text-white">{getPivotValue("Camarilla", "pivot")}</td>
+                        <td className="py-3 text-right text-white">{getPivotValue("Woodie", "pivot")}</td>
+                        <td className="py-3 text-right text-white">{getPivotValue("Demark", "pivot")}</td>
                       </tr>
                       {/* S1 Row */}
                       <tr className="hover:bg-zinc-900/10">
@@ -435,6 +448,77 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* KSEI Holdings Table */}
+              <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col lg:col-span-2">
+                <h3 className="text-sm font-mono text-zinc-350 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
+                  Kepemilikan Efek KSEI (Lokal vs Asing)
+                </h3>
+                {symbolDetail?.kseiHistory && symbolDetail.kseiHistory.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs font-mono text-left whitespace-nowrap min-w-[700px]">
+                      <thead>
+                        <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
+                          <th className="pb-2.5 font-normal">Date</th>
+                          <th className="pb-2.5 font-normal text-right">Total Shares</th>
+                          <th className="pb-2.5 font-normal text-center w-[180px]">Local / Foreign Ratio</th>
+                          <th className="pb-2.5 font-normal text-right">Local Retail / Inst %</th>
+                          <th className="pb-2.5 font-normal text-right">Foreign Retail / Inst %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-900">
+                        {symbolDetail.kseiHistory.map((h: any) => {
+                          const total = h.local_total + h.foreign_total;
+                          const localPct = total > 0 ? (h.local_total / total) * 100 : 0;
+                          const foreignPct = total > 0 ? (h.foreign_total / total) * 100 : 0;
+
+                          const localRetailPct = h.local_total > 0 ? (h.local_id / h.local_total) * 100 : 0;
+                          const localInstPct = 100 - localRetailPct;
+
+                          const foreignRetailPct = h.foreign_total > 0 ? (h.foreign_id / h.foreign_total) * 100 : 0;
+                          const foreignInstPct = 100 - foreignRetailPct;
+
+                          const dateObj = new Date(h.snapshot_date);
+                          const formattedDate = dateObj.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+
+                          return (
+                            <tr key={h.id} className="hover:bg-zinc-900/10">
+                              <td className="py-3.5 font-semibold text-zinc-300">{formattedDate}</td>
+                              <td className="py-3.5 text-right text-zinc-200 tabular-nums">
+                                {h.sec_num.toLocaleString("id-ID")}
+                              </td>
+                              <td className="py-3.5 px-4 text-center">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-emerald-450 font-bold w-10 text-right">{localPct.toFixed(0)}%</span>
+                                  <div className="flex-1 h-2 rounded bg-zinc-800 overflow-hidden flex">
+                                    <div className="h-full bg-emerald-500" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />
+                                    <div className="h-full bg-indigo-500" style={{ width: `${foreignPct}%` }} title={`Foreign: ${foreignPct.toFixed(1)}%`} />
+                                  </div>
+                                  <span className="text-[10px] text-indigo-400 font-bold w-10 text-left">{foreignPct.toFixed(0)}%</span>
+                                </div>
+                              </td>
+                              <td className="py-3.5 text-right tabular-nums text-zinc-400">
+                                <span className="text-zinc-200" title={`Retail: ${h.local_id.toLocaleString("id-ID")}`}>{localRetailPct.toFixed(0)}%</span>
+                                <span className="text-zinc-500"> / </span>
+                                <span className="text-zinc-300" title={`Institutional: ${(h.local_total - h.local_id).toLocaleString("id-ID")}`}>{localInstPct.toFixed(0)}%</span>
+                              </td>
+                              <td className="py-3.5 text-right tabular-nums text-zinc-400">
+                                <span className="text-zinc-200" title={`Retail: ${h.foreign_id.toLocaleString("id-ID")}`}>{foreignRetailPct.toFixed(0)}%</span>
+                                <span className="text-zinc-500"> / </span>
+                                <span className="text-zinc-300" title={`Institutional: ${(h.foreign_total - h.foreign_id).toLocaleString("id-ID")}`}>{foreignInstPct.toFixed(0)}%</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-zinc-500 text-xs">
+                    No KSEI holding composition history records found for {ticker}
+                  </div>
+                )}
               </div>
 
             </div>

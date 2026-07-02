@@ -57,7 +57,8 @@ export const TABS: TabConfig[] = [
       "AO",
       "CCI20",
       "Stoch.K",
-      "Stoch.D"
+      "Stoch.D",
+      "candlestick_patterns_1D"
     ]
   },
   {
@@ -245,6 +246,7 @@ export const COLUMN_METADATA: Record<string, ColumnMeta> = {
   "CCI20": { label: "CCI (20)", type: "number", align: "right" },
   "Stoch.K": { label: "Stoch %K", type: "number", align: "right" },
   "Stoch.D": { label: "Stoch %D", type: "number", align: "right" },
+  "candlestick_patterns_1D": { label: "Pattern", type: "string", align: "left" },
 
   // Extended Hours
   "premarket_close": { label: "Pre Market Close", type: "currency", align: "right" },

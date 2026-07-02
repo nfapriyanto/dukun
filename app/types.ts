@@ -37,6 +37,7 @@ export interface PivotPoints {
 
 export interface SymbolDetail {
   symbol: string;
+  logoId?: string;
   name: string;
   close: number;
   timeframe: Timeframe;
@@ -49,6 +50,7 @@ export interface SymbolDetail {
   oscillators: TechnicalIndicator[];
   movingAverages: TechnicalIndicator[];
   pivotPoints: PivotPoints[];
+  kseiHistory?: any[];
 }
 
 export interface TabConfig {

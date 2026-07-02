@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { TechnicalIndicator, PivotPoints, Timeframe } from "../../types";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const BASE_FIELDS = [
   "Recommend.Other", "Recommend.All", "Recommend.MA", "RSI", "RSI[1]",
@@ -209,8 +214,38 @@ export async function GET(request: Request) {
       }
     ];
 
+    // Query logo_id and KSEI holding history from Supabase
+    let logoId = "";
+    let kseiHistory: any[] = [];
+    const ticker = symbol.replace("IDX:", "").toUpperCase();
+
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const { data: stockRow } = await supabase
+          .from("stocks")
+          .select("logo_id")
+          .eq("symbol", symbol)
+          .single();
+        if (stockRow) {
+          logoId = stockRow.logo_id || "";
+        }
+
+        const { data: kseiData } = await supabase
+          .from("ksei_holdings")
+          .select("*")
+          .eq("ticker", ticker)
+          .order("snapshot_date", { ascending: false });
+        if (kseiData) {
+          kseiHistory = kseiData;
+        }
+      } catch (dbErr) {
+        console.warn("Failed to fetch Supabase symbol metadata", dbErr);
+      }
+    }
+
     const result = {
       symbol,
+      logoId,
       close: closePrice,
       timeframe: timeframeParam,
       recommendation: {
@@ -221,7 +256,8 @@ export async function GET(request: Request) {
       },
       oscillators,
       movingAverages,
-      pivotPoints
+      pivotPoints,
+      kseiHistory
     };
 
     return NextResponse.json(result);

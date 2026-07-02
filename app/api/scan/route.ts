@@ -120,14 +120,9 @@ export async function POST(request: Request) {
 
         if (!error && dbData && dbData.length > 0) {
           const firstRecord = dbData[0];
-          const createdAt = new Date(firstRecord.created_at).getTime();
-          const ageMinutes = (Date.now() - createdAt) / (1000 * 60);
-          
           const isToday = targetDate === new Date().toISOString().split("T")[0];
           
-          // If it is today's data, we only use cache if it was fetched less than 5 minutes ago.
-          // Otherwise, we fetch fresh prices from TradingView and upsert to update the database.
-          if (!isToday || ageMinutes < 5) {
+          if (!isToday) {
             stocks = dbData.map((row: any) => ({
               symbol: row.symbol,
               ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
@@ -137,6 +132,36 @@ export async function POST(request: Request) {
               ...row.data
             }));
             fetchedFromDb = true;
+          } else {
+            // Get current hour/min in Jakarta (WIB)
+            const now = new Date();
+            const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour12: false, hour: "numeric", minute: "numeric" });
+            const parts = formatter.formatToParts(now);
+            const currentWibHour = parseInt(parts.find(p => p.type === "hour")?.value || "0");
+            const currentWibMin = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+            const currentWibTimeVal = currentWibHour * 100 + currentWibMin;
+
+            // Get cache creation hour/min in Jakarta (WIB)
+            const cacheTime = new Date(firstRecord.created_at);
+            const cacheParts = formatter.formatToParts(cacheTime);
+            const cacheWibHour = parseInt(cacheParts.find(p => p.type === "hour")?.value || "0");
+            const cacheWibMin = parseInt(cacheParts.find(p => p.type === "minute")?.value || "0");
+            const cacheWibTimeVal = cacheWibHour * 100 + cacheWibMin;
+
+            // If it is now after 16:00 WIB, and the cache was created before 16:00 WIB, we force fetch/upsert
+            const needsClosingUpdate = currentWibTimeVal >= 1600 && cacheWibTimeVal < 1600;
+
+            if (!needsClosingUpdate) {
+              stocks = dbData.map((row: any) => ({
+                symbol: row.symbol,
+                ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
+                name: row.stocks?.name || row.symbol.replace("IDX:", ""),
+                logoId: row.stocks?.logo_id || "",
+                sector: row.stocks?.sector || "",
+                ...row.data
+              }));
+              fetchedFromDb = true;
+            }
           }
         }
       } catch (dbErr) {
