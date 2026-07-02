@@ -93,12 +93,13 @@ export default function ScreenerDashboard() {
   useEffect(() => {
     const targetTab = TABS.find(t => t.id === activeTab);
     if (targetTab) {
-      const hasField = targetTab.columns.includes(sortField) || sortField === "ticker-view";
+      const alwaysAvailable = ["close", "change", "volume", "market_cap_basic", "ticker-view"];
+      const hasField = targetTab.columns.includes(sortField) || alwaysAvailable.includes(sortField);
       if (!hasField) {
         setSortField("close"); // "close" exists in all 12 tabs
       }
     }
-  }, [activeTab]);
+  }, [activeTab, sortField]);
 
   // Invalidate Cache when snapshotDate changes
   useEffect(() => {
