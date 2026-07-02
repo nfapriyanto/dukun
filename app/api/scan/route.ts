@@ -77,6 +77,11 @@ const SCAN_COLUMNS_MAPPING: Record<string, string[]> = {
   ]
 };
 
+const ALL_UNIQUE_COLUMNS = [
+  "ticker-view",
+  ...Array.from(new Set(Object.values(SCAN_COLUMNS_MAPPING).flat().filter(c => c !== "ticker-view")))
+];
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -85,18 +90,8 @@ export async function POST(request: Request) {
       snapshotDate = "latest"
     } = body;
 
-    const baseColumns = SCAN_COLUMNS_MAPPING[category] || SCAN_COLUMNS_MAPPING.overview;
-    // Core columns that should ALWAYS be fetched and returned so they are available for client-side sorting
-    const coreColumns = ["close", "change", "volume", "market_cap_basic"];
-    
-    // Merge columns dynamically, keeping "ticker-view" at the start, and append coreColumns without duplicates
-    const columns = [
-      "ticker-view",
-      ...Array.from(new Set([
-        ...baseColumns.filter(c => c !== "ticker-view"),
-        ...coreColumns
-      ]))
-    ];
+    // We always request all unique columns so they are always cached and available for sorting/filtering in any tab view
+    const columns = ALL_UNIQUE_COLUMNS;
 
     const targetDate = snapshotDate === "latest" ? new Date().toISOString().split("T")[0] : snapshotDate;
 

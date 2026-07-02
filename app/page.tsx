@@ -89,18 +89,6 @@ export default function ScreenerDashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Gracefully fallback sortField when switching tabs if the column doesn't exist in the new tab and isn't a core field
-  useEffect(() => {
-    const targetTab = TABS.find(t => t.id === activeTab);
-    if (targetTab) {
-      const alwaysAvailable = ["close", "change", "volume", "market_cap_basic", "ticker-view"];
-      const hasField = targetTab.columns.includes(sortField) || alwaysAvailable.includes(sortField);
-      if (!hasField) {
-        setSortField("close"); // "close" exists in all 12 tabs
-      }
-    }
-  }, [activeTab, sortField]);
-
   // Invalidate Cache when snapshotDate changes
   useEffect(() => {
     setTabCache({});
