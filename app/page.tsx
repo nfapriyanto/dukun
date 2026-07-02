@@ -690,13 +690,33 @@ export default function ScreenerDashboard() {
                                 meta.align === "right" ? "text-right" : meta.align === "center" ? "text-center" : "text-left"
                               }`}
                             >
-                              {meta.type === "percent" && typeof val === "number" && (
+                              {col === "candlestick_patterns_1D" ? (
+                                <div className="flex gap-1.5 flex-wrap justify-start">
+                                  {Array.isArray(val) && val.length > 0 ? (
+                                    val.map((pattern: string) => (
+                                      <img
+                                        key={pattern}
+                                        src={`https://s3-symbol-logo.tradingview.com/candlepattern/${pattern}.svg`}
+                                        alt={pattern}
+                                        title={pattern.replace(/_/g, " ")}
+                                        className="h-5 w-5 bg-zinc-800 rounded p-0.5"
+                                        onError={(e) => {
+                                          (e.target as HTMLElement).style.display = "none";
+                                        }}
+                                      />
+                                    ))
+                                  ) : (
+                                    <span className="text-zinc-600">—</span>
+                                  )}
+                                </div>
+                              ) : meta.type === "percent" && typeof val === "number" ? (
                                 <span className="inline-flex items-center gap-0.5">
                                   {val >= 0 ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />}
                                   {formatValue(val, meta)}
                                 </span>
+                              ) : (
+                                formatValue(val, meta)
                               )}
-                              {(meta.type !== "percent" || typeof val !== "number") && formatValue(val, meta)}
                             </td>
                           );
                         })
