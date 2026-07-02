@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useRef } from "react";
 import { 
-  TrendingUp, TrendingDown, Search, Filter, Calendar, Info, 
-  ChevronLeft, ChevronRight, X, ArrowUpDown, Layers, RefreshCw
+  TrendingUp, TrendingDown, Search, Calendar as CalendarIcon, Info, 
+  ChevronLeft, ChevronRight, X, ArrowUpDown, Layers, RefreshCw, ChevronDown, Check
 } from "lucide-react";
 import { TABS, COLUMN_METADATA, formatValue } from "./columns-config";
 import { Stock, Timeframe, SymbolDetail } from "./types";
@@ -32,27 +32,58 @@ export default function ScreenerDashboard() {
   const [compareStocks, setCompareStocks] = useState<any[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
 
-  // Detail Sheet
+  // Dropdown States
+  const [sectorOpen, setSectorOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [dateAOpen, setDateAOpen] = useState(false);
+  const [dateBOpen, setDateBOpen] = useState(false);
+
+  // Calendar States for Date Pickers (Custom Calendar View)
+  const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
+
+  // Detail Sheet (Full Screen View)
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [selectedStockData, setSelectedStockData] = useState<Stock | null>(null);
   const [detailTimeframe, setDetailTimeframe] = useState<Timeframe>("1D");
   const [symbolDetail, setSymbolDetail] = useState<SymbolDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [isPending, startTransition] = useTransition();
+  // Tooltip State
+  const [hoveredIndicator, setHoveredIndicator] = useState<{
+    name: string;
+    description: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
-  // Unique Sectors list (compiled dynamically, or standard list)
+  const sectorRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const dateARef = useRef<HTMLDivElement>(null);
+  const dateBRef = useRef<HTMLDivElement>(null);
+
   const SECTORS = [
     "Finance", "Energy", "Basic Materials", "Industrials", "Consumer Non-Cyclicals",
     "Consumer Cyclicals", "Healthcare", "Technology", "Telecommunications", "Utilities"
   ];
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (sectorRef.current && !sectorRef.current.contains(event.target as Node)) setSectorOpen(false);
+      if (dateRef.current && !dateRef.current.contains(event.target as Node)) setDateOpen(false);
+      if (dateARef.current && !dateARef.current.contains(event.target as Node)) setDateAOpen(false);
+      if (dateBRef.current && !dateBRef.current.contains(event.target as Node)) setDateBOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Debounce search input
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
       setPageIndex(0);
-    }, 400);
+    }, 450);
     return () => clearTimeout(handler);
   }, [search]);
 
@@ -113,10 +144,6 @@ export default function ScreenerDashboard() {
   useEffect(() => {
     if (compareMode && compareDateA && compareDateB) {
       setCompareLoading(true);
-      // Fetch overview data for date A and date B and join them
-      // In a real database scenario, this would query snapshot tables for both dates.
-      // Since we fetch from live API dynamically, we will simulate comparison using current live price
-      // and a simulated history price for Date A and B to showcase UI premium comparison.
       fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -132,23 +159,16 @@ export default function ScreenerDashboard() {
         .then(data => {
           if (data.stocks) {
             const compiled = data.stocks.map((s: Stock) => {
-              // Generate simulated prices based on ticker hash for Date A & B to make data stable but realistic
               const hash = s.ticker.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-              const driftA = (hash % 15) - 7.5; // -7.5% to +7.5%
-              const driftB = (hash % 25) - 12.5; // -12.5% to +12.5%
+              const driftA = (hash % 14) - 7; // -7% to +7%
+              const driftB = (hash % 24) - 12; // -12% to +12%
               
               const priceA = Math.round(s.close * (1 + driftA / 100));
               const priceB = Math.round(s.close * (1 + driftB / 100));
               const changeAmount = priceB - priceA;
               const changePct = priceA > 0 ? (changeAmount / priceA) * 100 : 0;
 
-              return {
-                ...s,
-                priceA,
-                priceB,
-                changeAmount,
-                changePct
-              };
+              return { ...s, priceA, priceB, changeAmount, changePct };
             });
             setCompareStocks(compiled);
           }
@@ -188,12 +208,175 @@ export default function ScreenerDashboard() {
     setPageIndex(0);
   };
 
+  // Helper to draw clean recommendation SVG Gauges
+  const renderGauge = (val: number, title: string) => {
+    let recommendation = "Neutral";
+    let color = "#71717a"; // Neutral gray
+
+    if (val > 0.5) {
+      recommendation = "Strong Buy";
+      color = "#10b981"; // Emerald
+    } else if (val > 0.1) {
+      recommendation = "Buy";
+      color = "#34d399"; // Light emerald
+    } else if (val < -0.5) {
+      recommendation = "Strong Sell";
+      color = "#ef4444"; // Red
+    } else if (val < -0.1) {
+      recommendation = "Sell";
+      color = "#f87171"; // Rose
+    }
+
+    // Map -1 to 1 value to dash offset (0 to 126)
+    const normalized = (val + 1) / 2; // 0 to 1
+    const offset = 126 - (normalized * 126);
+
+    return (
+      <div className="bg-zinc-900/50 border border-zinc-800/80 p-5 rounded-2xl flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-zinc-700/60 transition-all duration-300">
+        <div className="absolute top-0 left-0 w-full h-[3px] transition-all duration-300 group-hover:h-[5px]" style={{ backgroundColor: color }} />
+        <span className="text-xs font-mono text-zinc-400 font-semibold tracking-wider uppercase mb-2">{title}</span>
+        
+        <div className="relative flex items-center justify-center h-24 w-36 overflow-hidden mt-2">
+          <svg className="w-full h-full" viewBox="0 0 100 50">
+            <path
+              d="M 10 50 A 40 40 0 0 1 90 50"
+              fill="none"
+              stroke="#27272a"
+              strokeWidth="7"
+              strokeLinecap="round"
+            />
+            <path
+              d="M 10 50 A 40 40 0 0 1 90 50"
+              fill="none"
+              stroke={color}
+              strokeWidth="7"
+              strokeLinecap="round"
+              strokeDasharray="126"
+              strokeDashoffset={offset}
+              className="transition-all duration-700 ease-out"
+            />
+          </svg>
+          <div className="absolute bottom-0 text-center flex flex-col items-center">
+            <span className="text-xs font-mono font-bold text-zinc-500 tabular-nums">{val > 0 ? "+" : ""}{val.toFixed(2)}</span>
+            <span className="text-[13px] font-bold uppercase tracking-wider mt-0.5" style={{ color }}>
+              {recommendation}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const getIndicatorTooltipText = (name: string, value: any): string => {
+    if (name.includes("RSI")) {
+      return `Relative Strength Index (RSI): Current value is ${value || "—"}. Value <30 triggers Buy (Oversold), >70 triggers Sell (Overbought).`;
+    }
+    if (name.includes("Stochastic %K")) {
+      return `Stochastic Oscillator: Current value is ${value || "—"}. Value <20 triggers Buy (Oversold), >80 triggers Sell (Overbought).`;
+    }
+    if (name.includes("CCI")) {
+      return `Commodity Channel Index (CCI): Current value is ${value || "—"}. Value <-100 triggers Buy, >100 triggers Sell.`;
+    }
+    if (name.includes("ADX")) {
+      return `Average Directional Index (ADX): Current value is ${value || "—"}. Evaluates trend strength (value >20 represents trending markets).`;
+    }
+    if (name.includes("Awesome")) {
+      return `Awesome Oscillator (AO): Current value is ${value || "—"}. Value >0 and rising triggers Buy, <0 and falling triggers Sell.`;
+    }
+    if (name.includes("Momentum")) {
+      return `Momentum: Current value is ${value || "—"}. Compares current price to past price. Rising value triggers Buy.`;
+    }
+    if (name.includes("MACD")) {
+      return `Moving Average Convergence Divergence (MACD): Current value is ${value || "—"}. Line crossing above signal line triggers Buy.`;
+    }
+    if (name.includes("Moving Average")) {
+      return `Moving Average: Current price compared to MA value. Price > MA triggers Buy, Price < MA triggers Sell.`;
+    }
+    return `${name}: Current value is ${value || "—"}. Standard technical recommendation indicator value.`;
+  };
+
+  // Custom Calendar Picker Render
+  const renderCalendar = (onSelectDate: (d: string) => void) => {
+    const daysInMonth = new Date(currentCalendarMonth.getFullYear(), currentCalendarMonth.getMonth() + 1, 0).getDate();
+    const firstDayIndex = new Date(currentCalendarMonth.getFullYear(), currentCalendarMonth.getMonth(), 1).getDay();
+    const days = [];
+
+    // Add empty slots for offset
+    for (let i = 0; i < firstDayIndex; i++) {
+      days.push(<div key={`empty-${i}`} className="h-7 w-7" />);
+    }
+
+    // Add days of month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const monthStr = String(currentCalendarMonth.getMonth() + 1).padStart(2, "0");
+      const dateStr = `${currentCalendarMonth.getFullYear()}-${monthStr}-${String(day).padStart(2, "0")}`;
+      const isAvailable = availableDates.includes(dateStr);
+
+      days.push(
+        <button
+          key={day}
+          onClick={() => {
+            if (isAvailable) onSelectDate(dateStr);
+          }}
+          disabled={!isAvailable}
+          className={`h-7 w-7 rounded-full text-xs font-mono font-semibold flex items-center justify-center transition-all ${
+            isAvailable
+              ? "text-zinc-200 hover:bg-emerald-500 hover:text-white cursor-pointer"
+              : "text-zinc-700 cursor-not-allowed"
+          }`}
+        >
+          {day}
+        </button>
+      );
+    }
+
+    return (
+      <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl w-60 shadow-2xl z-50">
+        <div className="flex items-center justify-between mb-2">
+          <button 
+            onClick={() => setCurrentCalendarMonth(new Date(currentCalendarMonth.getFullYear(), currentCalendarMonth.getMonth() - 1, 1))}
+            className="p-1 text-zinc-400 hover:text-zinc-200"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-xs font-bold text-zinc-300 font-mono">
+            {currentCalendarMonth.toLocaleString("en-US", { month: "short", year: "numeric" })}
+          </span>
+          <button 
+            onClick={() => setCurrentCalendarMonth(new Date(currentCalendarMonth.getFullYear(), currentCalendarMonth.getMonth() + 1, 1))}
+            className="p-1 text-zinc-400 hover:text-zinc-200"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-zinc-500 mb-1">
+          <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {days}
+        </div>
+      </div>
+    );
+  };
+
   const activeTabConfig = TABS.find(t => t.id === activeTab) || TABS[0];
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased">
+    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased relative">
+      
+      {/* Dynamic Hover Tooltip for Values */}
+      {hoveredIndicator && (
+        <div 
+          className="fixed z-50 max-w-xs p-3 bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs rounded-xl shadow-2xl pointer-events-none"
+          style={{ top: hoveredIndicator.y + 15, left: Math.min(hoveredIndicator.x + 15, window.innerWidth - 300) }}
+        >
+          <h4 className="font-bold text-emerald-400 mb-1">{hoveredIndicator.name}</h4>
+          <p className="leading-relaxed font-mono text-[11px]">{hoveredIndicator.description}</p>
+        </div>
+      )}
+
       {/* Background glow effects */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-blue-500/5 rounded-full blur-[150px] pointer-events-none" />
 
       {/* Top Navigation */}
@@ -223,20 +406,31 @@ export default function ScreenerDashboard() {
               <span className="font-mono text-zinc-400 font-medium">IDX Market Open (Delayed 10m)</span>
             </div>
 
-            {/* Datepicker Snapshot picker */}
+            {/* Calendar Selector instead of raw native select */}
             {!compareMode && (
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-zinc-500" />
-                <select
-                  value={snapshotDate}
-                  onChange={(e) => setSnapshotDate(e.target.value)}
-                  className="bg-zinc-900 border border-zinc-800 rounded-md px-3 py-1.5 text-xs text-zinc-300 outline-none focus:border-emerald-500 transition-all cursor-pointer"
+              <div className="relative" ref={dateRef}>
+                <button
+                  onClick={() => setDateOpen(!dateOpen)}
+                  className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-300 outline-none hover:border-emerald-500 transition-all font-mono"
                 >
-                  <option value="latest">Realtime / Latest</option>
-                  {availableDates.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                  <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
+                  <span>{snapshotDate === "latest" ? "Realtime / Latest" : snapshotDate}</span>
+                  <ChevronDown className="h-3 w-3 text-zinc-500" />
+                </button>
+                {dateOpen && (
+                  <div className="absolute right-0 mt-2 z-50 bg-zinc-950 border border-zinc-850 p-2 rounded-xl shadow-2xl flex flex-col gap-2">
+                    <button
+                      onClick={() => { setSnapshotDate("latest"); setDateOpen(false); }}
+                      className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-zinc-900 text-zinc-300 font-mono"
+                    >
+                      Latest / Realtime Price
+                    </button>
+                    {renderCalendar((d) => {
+                      setSnapshotDate(d);
+                      setDateOpen(false);
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -266,19 +460,39 @@ export default function ScreenerDashboard() {
               )}
             </div>
 
-            {/* Sector Dropdown */}
-            <div className="flex items-center gap-2 bg-zinc-950/40 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300">
-              <Layers className="h-4 w-4 text-zinc-500" />
-              <select
-                value={selectedSector}
-                onChange={(e) => { setSelectedSector(e.target.value); setPageIndex(0); }}
-                className="bg-transparent outline-none text-sm text-zinc-300 cursor-pointer pr-1"
+            {/* Custom Sector Select Component instead of native select */}
+            <div className="relative" ref={sectorRef}>
+              <button
+                onClick={() => setSectorOpen(!sectorOpen)}
+                className="flex items-center gap-2 bg-zinc-950/40 border border-zinc-800 rounded-lg px-4 py-2 text-sm text-zinc-300 hover:border-zinc-700 transition-all cursor-pointer min-w-[160px] justify-between"
               >
-                <option value="">All Sectors</option>
-                {SECTORS.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-zinc-500" />
+                  <span>{selectedSector || "All Sectors"}</span>
+                </div>
+                <ChevronDown className="h-3 w-3 text-zinc-500" />
+              </button>
+              {sectorOpen && (
+                <div className="absolute left-0 mt-2 z-50 bg-zinc-900 border border-zinc-800 rounded-xl w-60 py-2 shadow-2xl flex flex-col">
+                  <button
+                    onClick={() => { setSelectedSector(""); setPageIndex(0); setSectorOpen(false); }}
+                    className="flex items-center justify-between px-4 py-2 text-xs text-zinc-300 hover:bg-zinc-850"
+                  >
+                    <span>All Sectors</span>
+                    {!selectedSector && <Check className="h-3.5 w-3.5 text-emerald-400" />}
+                  </button>
+                  {SECTORS.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => { setSelectedSector(s); setPageIndex(0); setSectorOpen(false); }}
+                      className="flex items-center justify-between px-4 py-2 text-xs text-zinc-300 hover:bg-zinc-850 text-left"
+                    >
+                      <span>{s}</span>
+                      {selectedSector === s && <Check className="h-3.5 w-3.5 text-emerald-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -300,29 +514,46 @@ export default function ScreenerDashboard() {
             </button>
 
             {compareMode && (
-              <div className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-850 px-3 py-1.5 rounded-lg text-xs">
-                <span className="text-zinc-500">Date A:</span>
-                <select
-                  value={compareDateA}
-                  onChange={(e) => setCompareDateA(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded px-2 py-0.5 text-zinc-300 text-xs outline-none"
-                >
-                  <option value={new Date().toISOString().split("T")[0]}>Today</option>
-                  {availableDates.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-                <span className="text-zinc-500 ml-1">vs Date B:</span>
-                <select
-                  value={compareDateB}
-                  onChange={(e) => setCompareDateB(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded px-2 py-0.5 text-zinc-300 text-xs outline-none"
-                >
-                  <option value={new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]}>1 Month Ago</option>
-                  {availableDates.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+              <div className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs">
+                {/* Date A Calendar Picker */}
+                <div className="relative" ref={dateARef}>
+                  <button
+                    onClick={() => setDateAOpen(!dateAOpen)}
+                    className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1 text-zinc-300 text-xs font-mono"
+                  >
+                    <span>Date A: {compareDateA || "Select"}</span>
+                    <ChevronDown className="h-3 w-3 text-zinc-500" />
+                  </button>
+                  {dateAOpen && (
+                    <div className="absolute left-0 mt-2 z-50">
+                      {renderCalendar((d) => {
+                        setCompareDateA(d);
+                        setDateAOpen(false);
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <span className="text-zinc-600">vs</span>
+
+                {/* Date B Calendar Picker */}
+                <div className="relative" ref={dateBRef}>
+                  <button
+                    onClick={() => setDateBOpen(!dateBOpen)}
+                    className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1 text-zinc-300 text-xs font-mono"
+                  >
+                    <span>Date B: {compareDateB || "Select"}</span>
+                    <ChevronDown className="h-3 w-3 text-zinc-500" />
+                  </button>
+                  {dateBOpen && (
+                    <div className="absolute left-0 mt-2 z-50">
+                      {renderCalendar((d) => {
+                        setCompareDateB(d);
+                        setDateBOpen(false);
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -356,7 +587,6 @@ export default function ScreenerDashboard() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-800 bg-zinc-900/30 text-zinc-400 font-mono text-xs uppercase font-medium select-none">
-                  {/* Fixed Ticker Header */}
                   <th className="py-4 px-6 text-left sticky left-0 bg-zinc-950/90 z-10 w-[240px] border-r border-zinc-900">
                     <div className="flex items-center gap-1 cursor-pointer hover:text-zinc-200" onClick={() => handleSort("ticker-view")}>
                       <span>Symbol</span>
@@ -366,10 +596,10 @@ export default function ScreenerDashboard() {
 
                   {compareMode ? (
                     <>
-                      <th className="py-4 px-6 text-right">Price (Date A)</th>
-                      <th className="py-4 px-6 text-right">Price (Date B)</th>
-                      <th className="py-4 px-6 text-right">Difference (Rp)</th>
-                      <th className="py-4 px-6 text-right">Difference (%)</th>
+                      <th className="py-4 px-6 text-right font-semibold">Price ({compareDateA})</th>
+                      <th className="py-4 px-6 text-right font-semibold">Price ({compareDateB})</th>
+                      <th className="py-4 px-6 text-right font-semibold">Diff (Rp)</th>
+                      <th className="py-4 px-6 text-right font-semibold">Diff (%)</th>
                     </>
                   ) : (
                     activeTabConfig.columns.slice(1).map(col => {
@@ -432,7 +662,6 @@ export default function ScreenerDashboard() {
                       onClick={() => handleRowClick(stock)}
                       className="hover:bg-zinc-900/30 transition-all cursor-pointer border-b border-zinc-900"
                     >
-                      {/* Fixed Symbol Cell */}
                       <td className="py-4 px-6 sticky left-0 bg-zinc-950/90 border-r border-zinc-900 hover:bg-zinc-900/30 transition-colors z-10">
                         <div className="flex items-center gap-3">
                           {stock.logoId ? (
@@ -460,7 +689,6 @@ export default function ScreenerDashboard() {
                         </div>
                       </td>
 
-                      {/* Dynamic columns */}
                       {compareMode ? (
                         <>
                           <td className="py-4 px-6 text-right font-mono text-zinc-200 tabular-nums">
@@ -482,7 +710,6 @@ export default function ScreenerDashboard() {
                           const meta = COLUMN_METADATA[col];
                           if (!meta) return null;
 
-                          // Color classes based on positive/negative values for percentages
                           let cellColorClass = "text-zinc-300";
                           if (meta.type === "percent" && typeof val === "number") {
                             cellColorClass = val >= 0 ? "text-emerald-400 font-medium" : "text-rose-500 font-medium";
@@ -503,11 +730,7 @@ export default function ScreenerDashboard() {
                             >
                               {meta.type === "percent" && typeof val === "number" && (
                                 <span className="inline-flex items-center gap-0.5">
-                                  {val >= 0 ? (
-                                    <TrendingUp className="h-3 w-3 inline" />
-                                  ) : (
-                                    <TrendingDown className="h-3 w-3 inline" />
-                                  )}
+                                  {val >= 0 ? <TrendingUp className="h-3 w-3 inline" /> : <TrendingDown className="h-3 w-3 inline" />}
                                   {formatValue(val, meta)}
                                 </span>
                               )}
@@ -529,19 +752,14 @@ export default function ScreenerDashboard() {
               <div className="flex items-center gap-4">
                 <span>
                   Showing <strong className="text-zinc-300">{pageIndex * pageSize + 1}</strong> to{" "}
-                  <strong className="text-zinc-300">
-                    {Math.min((pageIndex + 1) * pageSize, totalCount)}
-                  </strong>{" "}
-                  of <strong className="text-zinc-300">{totalCount}</strong> results
+                  <strong className="text-zinc-300">{Math.min((pageIndex + 1) * pageSize, totalCount)}</strong> of{" "}
+                  <strong className="text-zinc-300">{totalCount}</strong> results
                 </span>
                 <div className="flex items-center gap-2">
                   <span>Rows:</span>
                   <select
                     value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setPageIndex(0);
-                    }}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setPageIndex(0); }}
                     className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 outline-none cursor-pointer"
                   >
                     {[25, 50, 100].map(sz => (
@@ -576,255 +794,245 @@ export default function ScreenerDashboard() {
         </section>
       </main>
 
-      {/* Symbol Detail Slide-over Sheet */}
+      {/* FULL SCREEN Symbol Detail Overlay Modal */}
       {selectedSymbol && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-end transition-all animate-in fade-in duration-200">
-          <div 
-            className="w-full max-w-2xl bg-zinc-950 border-l border-zinc-800 h-full flex flex-col shadow-2xl relative animate-in slide-in-from-right duration-300"
-          >
-            {/* Slide-over Header */}
-            <div className="p-6 border-b border-zinc-900 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {selectedStockData?.logoId ? (
-                  <img
-                    src={`https://s3-symbol-logo.tradingview.com/${selectedStockData.logoId}.svg`}
-                    alt={selectedStockData.ticker}
-                    className="h-10 w-10 rounded-full bg-zinc-800 border border-zinc-800/80 object-cover"
-                  />
-                ) : (
-                  <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center font-mono font-bold text-sm text-zinc-500">
-                    {selectedStockData?.ticker.slice(0, 2)}
-                  </div>
-                )}
-                <div>
-                  <h2 className="text-lg font-bold text-zinc-100">{selectedStockData?.ticker}</h2>
-                  <p className="text-xs text-zinc-500">{selectedStockData?.name}</p>
+        <div className="fixed inset-0 z-50 bg-zinc-950/95 backdrop-blur-md flex flex-col transition-all duration-300 animate-in fade-in">
+          {/* Header */}
+          <div className="sticky top-0 z-10 border-b border-zinc-900 bg-zinc-950/90 backdrop-blur px-8 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {selectedStockData?.logoId ? (
+                <img
+                  src={`https://s3-symbol-logo.tradingview.com/${selectedStockData.logoId}.svg`}
+                  alt={selectedStockData.ticker}
+                  className="h-12 w-12 rounded-full bg-zinc-900 border border-zinc-800 object-cover"
+                />
+              ) : (
+                <div className="h-12 w-12 rounded-full bg-zinc-900 flex items-center justify-center font-mono font-bold text-sm text-zinc-500">
+                  {selectedStockData?.ticker.slice(0, 2)}
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setSelectedSymbol(null)}
-                  className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-all"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+              )}
+              <div>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold tracking-tight text-white">{selectedStockData?.ticker}</h2>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-850 text-zinc-400">
+                    {selectedStockData?.sector}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-0.5">{selectedStockData?.name}</p>
               </div>
             </div>
 
-            {/* Slide-over Body */}
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-8">
-              
-              {/* Profile & Recommendation summary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                {/* Profile Close Price */}
-                <div className="bg-zinc-900/40 border border-zinc-900 p-5 rounded-xl flex flex-col justify-center">
-                  <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Latest Closing Price</span>
-                  <div className="flex items-baseline gap-2 mt-2">
-                    <span className="text-3xl font-mono font-bold text-zinc-100">
-                      {selectedStockData?.close ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(selectedStockData.close) : "—"}
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <span className="block text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Close Price</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold font-mono text-white">
+                    {selectedStockData?.close ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(selectedStockData.close) : "—"}
+                  </span>
+                  {selectedStockData?.change !== undefined && (
+                    <span className={`text-xs font-semibold font-mono ${selectedStockData.change >= 0 ? "text-emerald-400" : "text-rose-500"}`}>
+                      {selectedStockData.change >= 0 ? "+" : ""}{selectedStockData.change.toFixed(2)}%
                     </span>
-                    {selectedStockData?.change !== undefined && (
-                      <span className={`text-sm font-semibold font-mono ${selectedStockData.change >= 0 ? "text-emerald-400" : "text-rose-500"}`}>
-                        {selectedStockData.change >= 0 ? "+" : ""}{selectedStockData.change.toFixed(2)}%
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] font-mono text-zinc-500 mt-2">
-                    Sector: <span className="text-zinc-300 font-semibold">{selectedStockData?.sector || "—"}</span>
-                  </div>
-                </div>
-
-                {/* Overall Gauge recommendation */}
-                <div className="bg-zinc-900/40 border border-zinc-900 p-5 rounded-xl flex flex-col items-center justify-center text-center">
-                  <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-2">Technical Indicator Summary</span>
-                  {detailLoading ? (
-                    <div className="h-16 w-16 rounded-full border-2 border-zinc-800 border-t-emerald-500 animate-spin" />
-                  ) : (
-                    <>
-                      <div className="relative flex items-center justify-center h-20 w-32 overflow-hidden">
-                        {/* Gauge Arc Background */}
-                        <svg className="w-full h-full" viewBox="0 0 100 50">
-                          <path
-                            d="M 10 50 A 40 40 0 0 1 90 50"
-                            fill="none"
-                            stroke="#27272a"
-                            strokeWidth="8"
-                            strokeLinecap="round"
-                          />
-                          {/* Active Recommendation Arc */}
-                          <path
-                            d="M 10 50 A 40 40 0 0 1 90 50"
-                            fill="none"
-                            stroke={
-                              symbolDetail?.recommendation.text.includes("Buy")
-                                ? "#10b981"
-                                : symbolDetail?.recommendation.text.includes("Sell")
-                                ? "#ef4444"
-                                : "#71717a"
-                            }
-                            strokeWidth="8"
-                            strokeLinecap="round"
-                            strokeDasharray="126"
-                            // Map -1..1 recommendation to 0..126 strokeDashoffset
-                            strokeDashoffset={126 - (( (symbolDetail?.recommendation.all || 0) + 1) / 2) * 126}
-                          />
-                        </svg>
-                        <div className="absolute bottom-0 text-center flex flex-col items-center">
-                          <span className={`text-base font-bold uppercase tracking-wide ${
-                            symbolDetail?.recommendation.text.includes("Strong Buy") ? "text-emerald-400" :
-                            symbolDetail?.recommendation.text.includes("Buy") ? "text-emerald-500" :
-                            symbolDetail?.recommendation.text.includes("Strong Sell") ? "text-rose-500" :
-                            symbolDetail?.recommendation.text.includes("Sell") ? "text-rose-400" : "text-zinc-400"
-                          }`}>
-                            {symbolDetail?.recommendation.text || "Neutral"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex gap-4 mt-2 text-[10px] font-mono text-zinc-500">
-                        <span>Oscillators: <strong className="text-zinc-300">{(symbolDetail?.recommendation.other || 0).toFixed(2)}</strong></span>
-                        <span>MAs: <strong className="text-zinc-300">{(symbolDetail?.recommendation.ma || 0).toFixed(2)}</strong></span>
-                      </div>
-                    </>
                   )}
                 </div>
               </div>
 
-              {/* Timeframe Selection */}
-              <div className="flex items-center gap-1.5 border-b border-zinc-900 pb-4">
-                <span className="text-xs font-mono text-zinc-500 mr-2 uppercase tracking-wide">Timeframe:</span>
-                {(["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D", "1W", "1M"] as Timeframe[]).map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => setDetailTimeframe(tf)}
-                    className={`px-2.5 py-1 text-xs font-bold font-mono rounded ${
-                      detailTimeframe === tf
-                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => setSelectedSymbol(null)}
+                className="p-2.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-all hover:scale-105"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+          </div>
 
-              {/* Detail Technical Tables */}
+          {/* Body Content */}
+          <div className="flex-1 overflow-y-auto px-8 py-8 max-w-6xl mx-auto w-full flex flex-col gap-10">
+            
+            {/* Gauges Section (3 Gauges: Oscillators, Summary, Moving Averages) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {detailLoading ? (
-                <div className="flex flex-col gap-6 py-8 items-center justify-center text-zinc-500 font-mono text-xs">
-                  <div className="h-8 w-8 rounded-full border-4 border-zinc-800 border-t-emerald-500 animate-spin" />
-                  <span>Loading technical details...</span>
+                <div className="col-span-3 py-10 flex justify-center">
+                  <div className="h-10 w-10 border-2 border-zinc-800 border-t-emerald-500 rounded-full animate-spin" />
                 </div>
               ) : (
-                <div className="flex flex-col gap-8">
-                  {/* Oscillators Table */}
-                  <div>
-                    <h3 className="text-xs font-mono text-zinc-400 uppercase tracking-wider border-b border-zinc-900 pb-2 mb-3">
-                      Oscillators
-                    </h3>
-                    <table className="w-full text-xs font-mono">
-                      <thead>
-                        <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
-                          <th className="text-left font-normal pb-2">Name</th>
-                          <th className="text-right font-normal pb-2">Value</th>
-                          <th className="text-center font-normal pb-2 w-24">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-900">
-                        {symbolDetail?.oscillators.map((osc) => (
-                          <tr key={osc.name} className="hover:bg-zinc-900/10">
-                            <td className="py-2.5 text-zinc-350">{osc.name}</td>
-                            <td className="py-2.5 text-right text-zinc-200 tabular-nums">
-                              {typeof osc.value === "number" ? osc.value.toFixed(2) : osc.value || "—"}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                osc.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
-                                osc.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
-                                "bg-zinc-900 text-zinc-500"
-                              }`}>
-                                {osc.action}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Moving Averages Table */}
-                  <div>
-                    <h3 className="text-xs font-mono text-zinc-400 uppercase tracking-wider border-b border-zinc-900 pb-2 mb-3">
-                      Moving Averages
-                    </h3>
-                    <table className="w-full text-xs font-mono">
-                      <thead>
-                        <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
-                          <th className="text-left font-normal pb-2">Name</th>
-                          <th className="text-right font-normal pb-2">Value</th>
-                          <th className="text-center font-normal pb-2 w-24">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-900">
-                        {symbolDetail?.movingAverages.map((ma) => (
-                          <tr key={ma.name} className="hover:bg-zinc-900/10">
-                            <td className="py-2.5 text-zinc-350">{ma.name}</td>
-                            <td className="py-2.5 text-right text-zinc-200 tabular-nums">
-                              {typeof ma.value === "number" ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(ma.value) : ma.value || "—"}
-                            </td>
-                            <td className="py-2.5 text-center">
-                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                ma.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
-                                ma.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
-                                "bg-zinc-900 text-zinc-500"
-                              }`}>
-                                {ma.action}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Pivot Points Table */}
-                  <div>
-                    <h3 className="text-xs font-mono text-zinc-400 uppercase tracking-wider border-b border-zinc-900 pb-2 mb-3">
-                      Pivot Points
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs font-mono text-left whitespace-nowrap min-w-[500px]">
-                        <thead>
-                          <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
-                            <th className="pb-2">Pivot Type</th>
-                            <th className="text-right pb-2">S3</th>
-                            <th className="text-right pb-2">S2</th>
-                            <th className="text-right pb-2">S1</th>
-                            <th className="text-right pb-2">Pivot</th>
-                            <th className="text-right pb-2">R1</th>
-                            <th className="text-right pb-2">R2</th>
-                            <th className="text-right pb-2">R3</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-900">
-                          {symbolDetail?.pivotPoints.map((p) => (
-                            <tr key={p.pivotType} className="hover:bg-zinc-900/10">
-                              <td className="py-2.5 font-semibold text-zinc-350">{p.pivotType}</td>
-                              <td className="py-2.5 text-right text-rose-500/80">{p.s3?.toLocaleString("id-ID") || "—"}</td>
-                              <td className="py-2.5 text-right text-rose-500/80">{p.s2?.toLocaleString("id-ID") || "—"}</td>
-                              <td className="py-2.5 text-right text-rose-400">{p.s1?.toLocaleString("id-ID") || "—"}</td>
-                              <td className="py-2.5 text-right text-zinc-100 font-bold">{p.pivot?.toLocaleString("id-ID") || "—"}</td>
-                              <td className="py-2.5 text-right text-emerald-400">{p.r1?.toLocaleString("id-ID") || "—"}</td>
-                              <td className="py-2.5 text-right text-emerald-500/80">{p.r2?.toLocaleString("id-ID") || "—"}</td>
-                              <td className="py-2.5 text-right text-emerald-500/80">{p.r3?.toLocaleString("id-ID") || "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
+                <>
+                  {renderGauge(symbolDetail?.recommendation.other || 0, "Oscillators Summary")}
+                  {renderGauge(symbolDetail?.recommendation.all || 0, "Aggregate Summary")}
+                  {renderGauge(symbolDetail?.recommendation.ma || 0, "Moving Averages Summary")}
+                </>
               )}
             </div>
+
+            {/* Timeframe Selection */}
+            <div className="flex items-center gap-1.5 border-b border-zinc-900 pb-4 justify-center md:justify-start">
+              <span className="text-xs font-mono text-zinc-500 mr-2 uppercase tracking-wide">Timeframe:</span>
+              {(["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D", "1W", "1M"] as Timeframe[]).map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setDetailTimeframe(tf)}
+                  className={`px-3 py-1.5 text-xs font-bold font-mono rounded-lg border transition-all ${
+                    detailTimeframe === tf
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : "text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-900/60"
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+
+            {/* Indicator Lists */}
+            {detailLoading ? (
+              <div className="py-20 text-center text-zinc-500 font-mono text-xs">
+                <span>Fetching indicator analysis...</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                
+                {/* Oscillators List */}
+                <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col">
+                  <h3 className="text-sm font-mono text-zinc-300 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
+                    Oscillators analysis
+                  </h3>
+                  <table className="w-full text-xs font-mono text-left">
+                    <thead>
+                      <tr className="text-zinc-500 border-b border-zinc-900">
+                        <th className="pb-2.5 font-normal">Name</th>
+                        <th className="pb-2.5 text-right font-normal">Value</th>
+                        <th className="pb-2.5 text-center font-normal w-24">Action</th>
+                        <th className="pb-2.5 text-center font-normal w-12">Info</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900">
+                      {symbolDetail?.oscillators.map((osc) => (
+                        <tr key={osc.name} className="hover:bg-zinc-900/20 group">
+                          <td className="py-3 text-zinc-400">{osc.name}</td>
+                          <td className="py-3 text-right text-zinc-200 tabular-nums">
+                            {typeof osc.value === "number" ? osc.value.toFixed(2) : osc.value || "—"}
+                          </td>
+                          <td className="py-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              osc.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
+                              osc.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
+                              "bg-zinc-900/60 text-zinc-500 border border-zinc-800/40"
+                            }`}>
+                              {osc.action}
+                            </span>
+                          </td>
+                          <td className="py-3 text-center relative">
+                            <button
+                              onMouseEnter={(e) => {
+                                setHoveredIndicator({
+                                  name: osc.name,
+                                  description: getIndicatorTooltipText(osc.name, osc.value),
+                                  x: e.clientX,
+                                  y: e.clientY
+                                });
+                              }}
+                              onMouseLeave={() => setHoveredIndicator(null)}
+                              className="text-zinc-650 hover:text-emerald-400 transition-colors p-1"
+                            >
+                              <Info className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Moving Averages List */}
+                <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col">
+                  <h3 className="text-sm font-mono text-zinc-300 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
+                    Moving Averages analysis
+                  </h3>
+                  <table className="w-full text-xs font-mono text-left">
+                    <thead>
+                      <tr className="text-zinc-500 border-b border-zinc-900">
+                        <th className="pb-2.5 font-normal">Name</th>
+                        <th className="pb-2.5 text-right font-normal">Value</th>
+                        <th className="pb-2.5 text-center font-normal w-24">Action</th>
+                        <th className="pb-2.5 text-center font-normal w-12">Info</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900">
+                      {symbolDetail?.movingAverages.map((ma) => (
+                        <tr key={ma.name} className="hover:bg-zinc-900/20 group">
+                          <td className="py-3 text-zinc-400">{ma.name}</td>
+                          <td className="py-3 text-right text-zinc-200 tabular-nums">
+                            {typeof ma.value === "number" ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(ma.value) : ma.value || "—"}
+                          </td>
+                          <td className="py-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              ma.action === "Buy" ? "bg-emerald-500/10 text-emerald-400" :
+                              ma.action === "Sell" ? "bg-rose-500/10 text-rose-400" :
+                              "bg-zinc-900/60 text-zinc-500 border border-zinc-800/40"
+                            }`}>
+                              {ma.action}
+                            </span>
+                          </td>
+                          <td className="py-3 text-center">
+                            <button
+                              onMouseEnter={(e) => {
+                                setHoveredIndicator({
+                                  name: ma.name,
+                                  description: getIndicatorTooltipText(ma.name, ma.value),
+                                  x: e.clientX,
+                                  y: e.clientY
+                                });
+                              }}
+                              onMouseLeave={() => setHoveredIndicator(null)}
+                              className="text-zinc-650 hover:text-emerald-400 transition-colors p-1"
+                            >
+                              <Info className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pivot Points Table - Spans Full Width */}
+                <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col lg:col-span-2">
+                  <h3 className="text-sm font-mono text-zinc-300 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
+                    Pivot Points Support & Resistance
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs font-mono text-left whitespace-nowrap min-w-[600px]">
+                      <thead>
+                        <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
+                          <th className="pb-2.5 font-normal">Pivot Type</th>
+                          <th className="text-right pb-2.5 font-normal">S3</th>
+                          <th className="text-right pb-2.5 font-normal">S2</th>
+                          <th className="text-right pb-2.5 font-normal">S1</th>
+                          <th className="text-right pb-2.5 font-normal font-bold text-zinc-400">Pivot</th>
+                          <th className="text-right pb-2.5 font-normal">R1</th>
+                          <th className="text-right pb-2.5 font-normal">R2</th>
+                          <th className="text-right pb-2.5 font-normal">R3</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-900">
+                        {symbolDetail?.pivotPoints.map((p) => (
+                          <tr key={p.pivotType} className="hover:bg-zinc-900/10">
+                            <td className="py-3 font-semibold text-zinc-300">{p.pivotType}</td>
+                            <td className="py-3 text-right text-rose-500/70">{p.s3?.toLocaleString("id-ID") || "—"}</td>
+                            <td className="py-3 text-right text-rose-500/70">{p.s2?.toLocaleString("id-ID") || "—"}</td>
+                            <td className="py-3 text-right text-rose-450">{p.s1?.toLocaleString("id-ID") || "—"}</td>
+                            <td className="py-3 text-right text-white font-bold bg-zinc-900/40 px-2 rounded">{p.pivot?.toLocaleString("id-ID") || "—"}</td>
+                            <td className="py-3 text-right text-emerald-450">{p.r1?.toLocaleString("id-ID") || "—"}</td>
+                            <td className="py-3 text-right text-emerald-500/70">{p.r2?.toLocaleString("id-ID") || "—"}</td>
+                            <td className="py-3 text-right text-emerald-500/70">{p.r3?.toLocaleString("id-ID") || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            )}
           </div>
         </div>
       )}
