@@ -19,6 +19,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
     x: number;
     y: number;
   } | null>(null);
+  const [expandedKseiRow, setExpandedKseiRow] = useState<string | null>(null);
 
   const symbol = `IDX:${ticker}`;
 
@@ -482,33 +483,90 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                           const dateObj = new Date(h.snapshot_date);
                           const formattedDate = dateObj.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
+                          const isExpanded = expandedKseiRow === String(h.id);
+
                           return (
-                            <tr key={h.id} className="hover:bg-zinc-900/10">
-                              <td className="py-3.5 font-semibold text-zinc-300">{formattedDate}</td>
-                              <td className="py-3.5 text-right text-zinc-200 tabular-nums">
-                                {h.sec_num.toLocaleString("id-ID")}
-                              </td>
-                              <td className="py-3.5 px-4 text-center">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] text-emerald-450 font-bold w-10 text-right">{localPct.toFixed(0)}%</span>
-                                  <div className="flex-1 h-2 rounded bg-zinc-800 overflow-hidden flex">
-                                    <div className="h-full bg-emerald-500" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />
-                                    <div className="h-full bg-indigo-500" style={{ width: `${foreignPct}%` }} title={`Foreign: ${foreignPct.toFixed(1)}%`} />
+                            <>
+                              <tr 
+                                key={h.id} 
+                                onClick={() => setExpandedKseiRow(isExpanded ? null : h.id)}
+                                className="hover:bg-zinc-900/25 transition-all cursor-pointer border-b border-zinc-900/60"
+                              >
+                                <td className="py-4 font-semibold text-zinc-300">{formattedDate}</td>
+                                <td className="py-4 text-right text-zinc-200 tabular-nums">
+                                  {h.sec_num.toLocaleString("id-ID")}
+                                </td>
+                                <td className="py-4 px-4 text-center">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-emerald-450 font-bold w-10 text-right">{localPct.toFixed(0)}%</span>
+                                    <div className="flex-1 h-2 rounded bg-zinc-800 overflow-hidden flex">
+                                      <div className="h-full bg-emerald-500" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />
+                                      <div className="h-full bg-indigo-500" style={{ width: `${foreignPct}%` }} title={`Foreign: ${foreignPct.toFixed(1)}%`} />
+                                    </div>
+                                    <span className="text-[10px] text-indigo-400 font-bold w-10 text-left">{foreignPct.toFixed(0)}%</span>
                                   </div>
-                                  <span className="text-[10px] text-indigo-400 font-bold w-10 text-left">{foreignPct.toFixed(0)}%</span>
-                                </div>
-                              </td>
-                              <td className="py-3.5 text-right tabular-nums text-zinc-400">
-                                <span className="text-zinc-200" title={`Retail: ${h.local_id.toLocaleString("id-ID")}`}>{localRetailPct.toFixed(0)}%</span>
-                                <span className="text-zinc-500"> / </span>
-                                <span className="text-zinc-300" title={`Institutional: ${(h.local_total - h.local_id).toLocaleString("id-ID")}`}>{localInstPct.toFixed(0)}%</span>
-                              </td>
-                              <td className="py-3.5 text-right tabular-nums text-zinc-400">
-                                <span className="text-zinc-200" title={`Retail: ${h.foreign_id.toLocaleString("id-ID")}`}>{foreignRetailPct.toFixed(0)}%</span>
-                                <span className="text-zinc-500"> / </span>
-                                <span className="text-zinc-300" title={`Institutional: ${(h.foreign_total - h.foreign_id).toLocaleString("id-ID")}`}>{foreignInstPct.toFixed(0)}%</span>
-                              </td>
-                            </tr>
+                                </td>
+                                <td className="py-4 text-right tabular-nums text-zinc-400">
+                                  <span className="text-zinc-200" title={`Retail: ${h.local_id.toLocaleString("id-ID")}`}>{localRetailPct.toFixed(0)}%</span>
+                                  <span className="text-zinc-500"> / </span>
+                                  <span className="text-zinc-300" title={`Institutional: ${(h.local_total - h.local_id).toLocaleString("id-ID")}`}>{localInstPct.toFixed(0)}%</span>
+                                </td>
+                                <td className="py-4 text-right tabular-nums text-zinc-400">
+                                  <span className="text-zinc-200" title={`Retail: ${h.foreign_id.toLocaleString("id-ID")}`}>{foreignRetailPct.toFixed(0)}%</span>
+                                  <span className="text-zinc-500"> / </span>
+                                  <span className="text-zinc-300" title={`Institutional: ${(h.foreign_total - h.foreign_id).toLocaleString("id-ID")}`}>{foreignInstPct.toFixed(0)}%</span>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-zinc-950/40">
+                                  <td colSpan={5} className="p-4 border-t border-b border-zinc-900">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      {/* Local Breakdown */}
+                                      <div className="bg-zinc-900/20 p-4 rounded-xl border border-zinc-800/40">
+                                        <h4 className="text-emerald-400 font-bold text-xs mb-3 flex items-center gap-1.5 uppercase tracking-wide">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                          Lokal Breakdown (Shares)
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-[11px] font-mono text-zinc-400">
+                                          <span>Retail Individual (ID):</span><span className="text-right text-zinc-200">{h.local_id.toLocaleString("id-ID")}</span>
+                                          <span>Mutual Fund (MF):</span><span className="text-right text-zinc-200">{h.local_mf.toLocaleString("id-ID")}</span>
+                                          <span>Corporate (CP):</span><span className="text-right text-zinc-200">{h.local_cp.toLocaleString("id-ID")}</span>
+                                          <span>Pension Fund (PF):</span><span className="text-right text-zinc-200">{h.local_pf.toLocaleString("id-ID")}</span>
+                                          <span>Financial Institution (IB):</span><span className="text-right text-zinc-200">{h.local_ib.toLocaleString("id-ID")}</span>
+                                          <span>Insurance (IS):</span><span className="text-right text-zinc-200">{h.local_is.toLocaleString("id-ID")}</span>
+                                          <span>Securities Company (SC):</span><span className="text-right text-zinc-200">{h.local_sc.toLocaleString("id-ID")}</span>
+                                          <span>Foundation (FD):</span><span className="text-right text-zinc-200">{h.local_fd.toLocaleString("id-ID")}</span>
+                                          <span>Others (OT):</span><span className="text-right text-zinc-200">{h.local_ot.toLocaleString("id-ID")}</span>
+                                          <div className="col-span-2 border-t border-zinc-900/60 my-1"></div>
+                                          <span className="font-bold text-zinc-300">Total Lokal:</span><span className="text-right font-bold text-emerald-450">{h.local_total.toLocaleString("id-ID")}</span>
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Foreign Breakdown */}
+                                      <div className="bg-zinc-900/20 p-4 rounded-xl border border-zinc-800/40">
+                                        <h4 className="text-indigo-400 font-bold text-xs mb-3 flex items-center gap-1.5 uppercase tracking-wide">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                          Asing Breakdown (Shares)
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-[11px] font-mono text-zinc-400">
+                                          <span>Retail Individual (ID):</span><span className="text-right text-zinc-200">{h.foreign_id.toLocaleString("id-ID")}</span>
+                                          <span>Mutual Fund (MF):</span><span className="text-right text-zinc-200">{h.foreign_mf.toLocaleString("id-ID")}</span>
+                                          <span>Corporate (CP):</span><span className="text-right text-zinc-200">{h.foreign_cp.toLocaleString("id-ID")}</span>
+                                          <span>Pension Fund (PF):</span><span className="text-right text-zinc-200">{h.foreign_pf.toLocaleString("id-ID")}</span>
+                                          <span>Financial Institution (IB):</span><span className="text-right text-zinc-200">{h.foreign_ib.toLocaleString("id-ID")}</span>
+                                          <span>Insurance (IS):</span><span className="text-right text-zinc-200">{h.foreign_is.toLocaleString("id-ID")}</span>
+                                          <span>Securities Company (SC):</span><span className="text-right text-zinc-200">{h.foreign_sc.toLocaleString("id-ID")}</span>
+                                          <span>Foundation (FD):</span><span className="text-right text-zinc-200">{h.foreign_fd.toLocaleString("id-ID")}</span>
+                                          <span>Others (OT):</span><span className="text-right text-zinc-200">{h.foreign_ot.toLocaleString("id-ID")}</span>
+                                          <div className="col-span-2 border-t border-zinc-900/60 my-1"></div>
+                                          <span className="font-bold text-zinc-300">Total Asing:</span><span className="text-right font-bold text-indigo-455">{h.foreign_total.toLocaleString("id-ID")}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
                           );
                         })}
                       </tbody>
