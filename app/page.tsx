@@ -89,7 +89,7 @@ export default function ScreenerDashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Gracefully fallback sortField when switching tabs if the column doesn't exist in the new tab
+  // Gracefully fallback sortField when switching tabs if the column doesn't exist in the new tab and isn't a core field
   useEffect(() => {
     const targetTab = TABS.find(t => t.id === activeTab);
     if (targetTab) {
@@ -224,10 +224,6 @@ export default function ScreenerDashboard() {
       if (isRatingField) {
         valA = getRatingScore(valA);
         valB = getRatingScore(valB);
-        
-        // Sorting ratings: "Saat Ascending maka tampilkan Strong Buy, jika Descending tampilkan Strong Sell"
-        // Ascending -> Strong Buy (score 2) first, so we sort DESCENDING numerically
-        // Descending -> Strong Sell (score -2) first, so we sort ASCENDING numerically
         return sortOrder === "asc" ? valB - valA : valA - valB;
       }
 
@@ -333,6 +329,7 @@ export default function ScreenerDashboard() {
 
   const activeTabConfig = TABS.find(t => t.id === activeTab) || TABS[0];
   const isTabLoading = loading && !tabCache[activeTab];
+  const sortLabel = COLUMN_METADATA[sortField]?.label || sortField;
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased relative">
@@ -379,7 +376,7 @@ export default function ScreenerDashboard() {
                   <ChevronDown className="h-3 w-3 text-zinc-500" />
                 </button>
                 {dateOpen && (
-                  <div className="absolute right-0 mt-2 z-50 bg-zinc-950 border border-zinc-855 p-2 rounded-xl shadow-2xl flex flex-col gap-2">
+                  <div className="absolute right-0 mt-2 z-50 bg-zinc-950 border border-zinc-850 p-2 rounded-xl shadow-2xl flex flex-col gap-2">
                     <button
                       onClick={() => { setSnapshotDate("latest"); setDateOpen(false); }}
                       className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-zinc-900 text-zinc-300 font-mono"
@@ -454,6 +451,12 @@ export default function ScreenerDashboard() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Explicit Sorting Status Indicator */}
+            <div className="text-xs text-zinc-400 font-mono flex items-center gap-1.5 bg-zinc-900/60 border border-zinc-800 px-3 py-2 rounded-lg">
+              <ArrowUpDown className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+              <span>Sort: <strong className="text-zinc-200">{sortLabel}</strong> ({sortOrder === "desc" ? "High to Low / Strong Buy first" : "Low to High / Strong Sell first"})</span>
             </div>
           </div>
 
@@ -551,7 +554,12 @@ export default function ScreenerDashboard() {
                   <th className="py-4 px-6 text-left sticky left-0 bg-zinc-950/90 z-10 w-[240px] border-r border-zinc-900">
                     <div className="flex items-center gap-1 cursor-pointer hover:text-zinc-200" onClick={() => handleSort("ticker-view")}>
                       <span>Symbol</span>
-                      <ArrowUpDown className="h-3 w-3" />
+                      {sortField === "ticker-view" && (
+                        <ArrowUpDown className="h-3 w-3 text-emerald-400" />
+                      )}
+                      {sortField !== "ticker-view" && (
+                        <ArrowUpDown className="h-3 w-3" />
+                      )}
                     </div>
                   </th>
 
@@ -566,6 +574,7 @@ export default function ScreenerDashboard() {
                     activeTabConfig.columns.slice(1).map(col => {
                       const meta = COLUMN_METADATA[col];
                       if (!meta) return null;
+                      const isSorted = sortField === col;
                       return (
                         <th
                           key={col}
@@ -580,7 +589,11 @@ export default function ScreenerDashboard() {
                             onClick={() => handleSort(col)}
                           >
                             <span>{meta.label}</span>
-                            <ArrowUpDown className="h-3 w-3" />
+                            {isSorted ? (
+                              <ArrowUpDown className="h-3 w-3 text-emerald-400" />
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3" />
+                            )}
                           </div>
                         </th>
                       );
