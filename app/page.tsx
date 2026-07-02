@@ -89,6 +89,17 @@ export default function ScreenerDashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Gracefully fallback sortField when switching tabs if the column doesn't exist in the new tab
+  useEffect(() => {
+    const targetTab = TABS.find(t => t.id === activeTab);
+    if (targetTab) {
+      const hasField = targetTab.columns.includes(sortField) || sortField === "ticker-view";
+      if (!hasField) {
+        setSortField("close"); // "close" exists in all 12 tabs
+      }
+    }
+  }, [activeTab]);
+
   // Invalidate Cache when snapshotDate changes
   useEffect(() => {
     setTabCache({});
