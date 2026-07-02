@@ -20,7 +20,6 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
     y: number;
   } | null>(null);
 
-  // We convert TICKER back to IDX:TICKER for the TradingView scanner API
   const symbol = `IDX:${ticker}`;
 
   useEffect(() => {
@@ -34,7 +33,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
       .finally(() => setLoading(false));
   }, [symbol, detailTimeframe]);
 
-  const renderGauge = (val: number, title: string) => {
+  const renderGauge = (val: number, title: string, sell: number, neutral: number, buy: number) => {
     let recommendation = "Neutral";
     let color = "#71717a";
 
@@ -87,6 +86,22 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
             </span>
           </div>
         </div>
+
+        {/* Counter Summary Below the Gauge */}
+        <div className="flex justify-between w-full mt-5 text-[11px] font-mono border-t border-zinc-800/60 pt-3 px-1">
+          <span className="text-rose-400 font-semibold flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+            Sell: {sell}
+          </span>
+          <span className="text-zinc-500 font-semibold flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-zinc-650" />
+            Neutral: {neutral}
+          </span>
+          <span className="text-emerald-400 font-semibold flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Buy: {buy}
+          </span>
+        </div>
       </div>
     );
   };
@@ -119,6 +134,27 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
     return `${name}: Current value is ${value || "—"}. Standard technical recommendation indicator value.`;
   };
 
+  // Helper to count sinyals inside oscillators or MAs arrays
+  const getCounts = (indicators: { action: string }[]) => {
+    let sell = 0;
+    let neutral = 0;
+    let buy = 0;
+    indicators.forEach(ind => {
+      if (ind.action === "Buy") buy++;
+      else if (ind.action === "Sell") sell++;
+      else neutral++;
+    });
+    return { sell, neutral, buy };
+  };
+
+  const oscCounts = symbolDetail ? getCounts(symbolDetail.oscillators) : { sell: 0, neutral: 0, buy: 0 };
+  const maCounts = symbolDetail ? getCounts(symbolDetail.movingAverages) : { sell: 0, neutral: 0, buy: 0 };
+  const summaryCounts = {
+    sell: oscCounts.sell + maCounts.sell,
+    neutral: oscCounts.neutral + maCounts.neutral,
+    buy: oscCounts.buy + maCounts.buy
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased relative">
       {hoveredIndicator && (
@@ -146,7 +182,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
             <h1 className="text-xl font-bold tracking-tight text-white">{ticker} Technical analysis</h1>
           </div>
 
-          <div className="w-[120px]" /> {/* Spacer */}
+          <div className="w-[120px]" />
         </div>
       </header>
 
@@ -176,14 +212,14 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
 
             {/* Gauges Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {renderGauge(symbolDetail?.recommendation.other || 0, "Oscillators Summary")}
-              {renderGauge(symbolDetail?.recommendation.all || 0, "Aggregate Summary")}
-              {renderGauge(symbolDetail?.recommendation.ma || 0, "Moving Averages Summary")}
+              {renderGauge(symbolDetail?.recommendation.other || 0, "Oscillators Summary", oscCounts.sell, oscCounts.neutral, oscCounts.buy)}
+              {renderGauge(symbolDetail?.recommendation.all || 0, "Aggregate Summary", summaryCounts.sell, summaryCounts.neutral, summaryCounts.buy)}
+              {renderGauge(symbolDetail?.recommendation.ma || 0, "Moving Averages Summary", maCounts.sell, maCounts.neutral, maCounts.buy)}
             </div>
 
             {/* Timeframe Toggles */}
             <div className="flex items-center gap-1.5 border-b border-zinc-900 pb-4 overflow-x-auto">
-              <span className="text-xs font-mono text-zinc-500 mr-2 uppercase tracking-wide">Timeframe:</span>
+              <span className="text-xs font-mono text-zinc-505 mr-2 uppercase tracking-wide">Timeframe:</span>
               {(["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1D", "1W", "1M"] as Timeframe[]).map((tf) => (
                 <button
                   key={tf}
@@ -243,7 +279,7 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                               });
                             }}
                             onMouseLeave={() => setHoveredIndicator(null)}
-                            className="text-zinc-600 hover:text-emerald-400 transition-colors p-1"
+                            className="text-zinc-605 hover:text-emerald-400 transition-colors p-1"
                           >
                             <Info className="h-3.5 w-3.5" />
                           </button>

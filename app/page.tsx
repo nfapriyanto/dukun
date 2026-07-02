@@ -11,14 +11,24 @@ import { Stock } from "./types";
 
 // Helper to determine the rating score for sorting (Strong Sell to Strong Buy)
 const getRatingScore = (val: any): number => {
-  if (typeof val === "number") return val; 
-  if (typeof val === "string") {
-    const l = val.toLowerCase();
-    if (l.includes("strong buy")) return 2;
-    if (l.includes("strong sell")) return -2;
-    if (l.includes("buy")) return 1;
-    if (l.includes("sell")) return -1;
+  if (val === undefined || val === null) return 0;
+  
+  if (typeof val === "number") {
+    if (val > 0.5) return 2;
+    if (val > 0.1) return 1;
+    if (val < -0.5) return -2;
+    if (val < -0.1) return -1;
+    return 0;
   }
+  
+  if (typeof val === "string") {
+    const clean = val.toLowerCase().replace(/[^a-z]/g, "");
+    if (clean === "strongbuy") return 2;
+    if (clean === "strongsell") return -2;
+    if (clean === "buy") return 1;
+    if (clean === "sell") return -1;
+  }
+  
   return 0;
 };
 
