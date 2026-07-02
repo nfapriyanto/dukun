@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { 
   TrendingUp, TrendingDown, Search, Calendar as CalendarIcon, Info, 
   ChevronLeft, ChevronRight, X, ArrowUpDown, Layers, RefreshCw, ChevronDown, Check
@@ -8,16 +8,31 @@ import {
 import { TABS, COLUMN_METADATA, formatValue } from "./columns-config";
 import { Stock, Timeframe, SymbolDetail } from "./types";
 
+// Helper to determine the rating score for sorting (Strong Sell to Strong Buy)
+const getRatingScore = (val: any): number => {
+  if (typeof val === "number") return val; 
+  if (typeof val === "string") {
+    const l = val.toLowerCase();
+    if (l.includes("strong buy")) return 2;
+    if (l.includes("strong sell")) return -2;
+    if (l.includes("buy")) return 1;
+    if (l.includes("sell")) return -1;
+  }
+  return 0;
+};
+
 export default function ScreenerDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
-  const [stocks, setStocks] = useState<Stock[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
+  
+  // Client-Side Tab Cache
+  // Stores raw full stock lists keyed by tab ID e.g. { overview: Stock[], performance: Stock[] }
+  const [tabCache, setTabCache] = useState<Record<string, Stock[]>>({});
+  
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedSector, setSelectedSector] = useState("");
   
-  // Sorting & Pagination
+  // Sorting & Pagination (Handled client-side)
   const [sortField, setSortField] = useState("market_cap_basic");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [pageSize, setPageSize] = useState(25);
@@ -78,37 +93,35 @@ export default function ScreenerDashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Debounce search input
+  // Invalidate Cache when snapshotDate changes
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPageIndex(0);
-    }, 450);
-    return () => clearTimeout(handler);
-  }, [search]);
+    setTabCache({});
+    setPageIndex(0);
+  }, [snapshotDate]);
 
-  // Fetch scan data
-  const fetchScanData = async () => {
+  // Fetch scan data only if tab is not cached
+  const fetchScanData = async (tabId: string) => {
+    if (tabCache[tabId]) {
+      // Already cached, skip fetching
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          category: activeTab,
-          search: debouncedSearch,
-          sortField,
-          sortOrder,
-          sector: selectedSector,
-          rangeStart: pageIndex * pageSize,
-          rangeEnd: (pageIndex + 1) * pageSize,
+          category: tabId,
           snapshotDate
         })
       });
       if (res.ok) {
         const data = await res.json();
-        setStocks(data.stocks || []);
-        setTotalCount(data.totalCount || 0);
+        const fetchedStocks = data.stocks || [];
+        setTabCache(prev => ({
+          ...prev,
+          [tabId]: fetchedStocks
+        }));
       }
     } catch (e) {
       console.error(e);
@@ -133,12 +146,12 @@ export default function ScreenerDashboard() {
       .catch(console.error);
   }, []);
 
-  // Trigger fetch when parameters change
+  // Fetch current active tab data
   useEffect(() => {
     if (!compareMode) {
-      fetchScanData();
+      fetchScanData(activeTab);
     }
-  }, [activeTab, debouncedSearch, sortField, sortOrder, pageSize, pageIndex, selectedSector, snapshotDate, compareMode]);
+  }, [activeTab, snapshotDate, compareMode]);
 
   // Handle Comparison mode fetching
   useEffect(() => {
@@ -149,10 +162,7 @@ export default function ScreenerDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           category: "overview",
-          search: debouncedSearch,
-          sector: selectedSector,
-          rangeStart: 0,
-          rangeEnd: 100
+          snapshotDate: "latest"
         })
       })
         .then(res => res.json())
@@ -160,8 +170,8 @@ export default function ScreenerDashboard() {
           if (data.stocks) {
             const compiled = data.stocks.map((s: Stock) => {
               const hash = s.ticker.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-              const driftA = (hash % 14) - 7; // -7% to +7%
-              const driftB = (hash % 24) - 12; // -12% to +12%
+              const driftA = (hash % 14) - 7;
+              const driftB = (hash % 24) - 12;
               
               const priceA = Math.round(s.close * (1 + driftA / 100));
               const priceB = Math.round(s.close * (1 + driftB / 100));
@@ -176,7 +186,62 @@ export default function ScreenerDashboard() {
         .catch(console.error)
         .finally(() => setCompareLoading(false));
     }
-  }, [compareMode, compareDateA, compareDateB, debouncedSearch, selectedSector]);
+  }, [compareMode, compareDateA, compareDateB]);
+
+  // Client-side filtering, searching, sorting, and pagination
+  const processedStocks = useMemo(() => {
+    const rawStocks = tabCache[activeTab] || [];
+    if (rawStocks.length === 0) return [];
+
+    let filtered = [...rawStocks];
+
+    // 1. Sector Filter
+    if (selectedSector) {
+      filtered = filtered.filter(s => s.sector === selectedSector);
+    }
+
+    // 2. Search Text
+    if (search) {
+      const sLower = search.toLowerCase();
+      filtered = filtered.filter(
+        s => s.ticker.toLowerCase().includes(sLower) || s.name.toLowerCase().includes(sLower)
+      );
+    }
+
+    // 3. Sorting (With Rating logic support)
+    const isRatingField = sortField.includes("Rating");
+    filtered.sort((a, b) => {
+      let valA = a[sortField];
+      let valB = b[sortField];
+
+      if (isRatingField) {
+        valA = getRatingScore(valA);
+        valB = getRatingScore(valB);
+      }
+
+      if (valA === undefined || valA === null) return 1;
+      if (valB === undefined || valB === null) return -1;
+
+      if (typeof valA === "number" && typeof valB === "number") {
+        return sortOrder === "desc" ? valB - valA : valA - valB;
+      }
+
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return sortOrder === "desc"
+        ? strB.localeCompare(strA)
+        : strA.localeCompare(strB);
+    });
+
+    return filtered;
+  }, [tabCache, activeTab, selectedSector, search, sortField, sortOrder]);
+
+  // Paginated subslice of current view
+  const paginatedStocks = useMemo(() => {
+    const start = pageIndex * pageSize;
+    const end = start + pageSize;
+    return processedStocks.slice(start, end);
+  }, [processedStocks, pageIndex, pageSize]);
 
   // Fetch symbol technical detail
   useEffect(() => {
@@ -208,27 +273,26 @@ export default function ScreenerDashboard() {
     setPageIndex(0);
   };
 
-  // Helper to draw clean recommendation SVG Gauges
+  // Helper to draw recommendation SVG Gauges
   const renderGauge = (val: number, title: string) => {
     let recommendation = "Neutral";
-    let color = "#71717a"; // Neutral gray
+    let color = "#71717a";
 
     if (val > 0.5) {
       recommendation = "Strong Buy";
-      color = "#10b981"; // Emerald
+      color = "#10b981";
     } else if (val > 0.1) {
       recommendation = "Buy";
-      color = "#34d399"; // Light emerald
+      color = "#34d399";
     } else if (val < -0.5) {
       recommendation = "Strong Sell";
-      color = "#ef4444"; // Red
+      color = "#ef4444";
     } else if (val < -0.1) {
       recommendation = "Sell";
-      color = "#f87171"; // Rose
+      color = "#f87171";
     }
 
-    // Map -1 to 1 value to dash offset (0 to 126)
-    const normalized = (val + 1) / 2; // 0 to 1
+    const normalized = (val + 1) / 2;
     const offset = 126 - (normalized * 126);
 
     return (
@@ -301,12 +365,10 @@ export default function ScreenerDashboard() {
     const firstDayIndex = new Date(currentCalendarMonth.getFullYear(), currentCalendarMonth.getMonth(), 1).getDay();
     const days = [];
 
-    // Add empty slots for offset
     for (let i = 0; i < firstDayIndex; i++) {
       days.push(<div key={`empty-${i}`} className="h-7 w-7" />);
     }
 
-    // Add days of month
     for (let day = 1; day <= daysInMonth; day++) {
       const monthStr = String(currentCalendarMonth.getMonth() + 1).padStart(2, "0");
       const dateStr = `${currentCalendarMonth.getFullYear()}-${monthStr}-${String(day).padStart(2, "0")}`;
@@ -360,6 +422,7 @@ export default function ScreenerDashboard() {
   };
 
   const activeTabConfig = TABS.find(t => t.id === activeTab) || TABS[0];
+  const isTabLoading = loading && !tabCache[activeTab];
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased relative">
@@ -397,7 +460,6 @@ export default function ScreenerDashboard() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Live Indicator */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800/80 text-xs">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -406,7 +468,7 @@ export default function ScreenerDashboard() {
               <span className="font-mono text-zinc-400 font-medium">IDX Market Open (Delayed 10m)</span>
             </div>
 
-            {/* Calendar Selector instead of raw native select */}
+            {/* Calendar Selector */}
             {!compareMode && (
               <div className="relative" ref={dateRef}>
                 <button
@@ -450,7 +512,7 @@ export default function ScreenerDashboard() {
                 type="text"
                 placeholder="Search symbol, company name..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPageIndex(0); }}
                 className="w-full bg-zinc-950/60 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 transition-all"
               />
               {search && (
@@ -460,7 +522,7 @@ export default function ScreenerDashboard() {
               )}
             </div>
 
-            {/* Custom Sector Select Component instead of native select */}
+            {/* Custom Sector Select Component */}
             <div className="relative" ref={sectorRef}>
               <button
                 onClick={() => setSectorOpen(!sectorOpen)}
@@ -628,7 +690,7 @@ export default function ScreenerDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900 text-sm">
-                {(compareMode ? compareLoading : loading) ? (
+                {isTabLoading || (compareMode && compareLoading) ? (
                   Array.from({ length: 6 }).map((_, rIdx) => (
                     <tr key={rIdx} className="animate-pulse">
                       <td className="py-4 px-6 sticky left-0 bg-zinc-950/90 border-r border-zinc-900">
@@ -647,7 +709,7 @@ export default function ScreenerDashboard() {
                       ))}
                     </tr>
                   ))
-                ) : (compareMode ? compareStocks : stocks).length === 0 ? (
+                ) : (compareMode ? compareStocks : paginatedStocks).length === 0 ? (
                   <tr>
                     <td colSpan={compareMode ? 5 : activeTabConfig.columns.length} className="py-16 text-center text-zinc-500">
                       <Info className="h-8 w-8 mx-auto mb-3 text-zinc-600" />
@@ -656,7 +718,7 @@ export default function ScreenerDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  (compareMode ? compareStocks : stocks).map(stock => (
+                  (compareMode ? compareStocks : paginatedStocks).map(stock => (
                     <tr
                       key={stock.symbol}
                       onClick={() => handleRowClick(stock)}
@@ -752,8 +814,8 @@ export default function ScreenerDashboard() {
               <div className="flex items-center gap-4">
                 <span>
                   Showing <strong className="text-zinc-300">{pageIndex * pageSize + 1}</strong> to{" "}
-                  <strong className="text-zinc-300">{Math.min((pageIndex + 1) * pageSize, totalCount)}</strong> of{" "}
-                  <strong className="text-zinc-300">{totalCount}</strong> results
+                  <strong className="text-zinc-300">{Math.min((pageIndex + 1) * pageSize, processedStocks.length)}</strong> of{" "}
+                  <strong className="text-zinc-300">{processedStocks.length}</strong> results
                 </span>
                 <div className="flex items-center gap-2">
                   <span>Rows:</span>
@@ -779,11 +841,11 @@ export default function ScreenerDashboard() {
                 </button>
                 <span className="px-2">
                   Page <strong className="text-zinc-300">{pageIndex + 1}</strong> of{" "}
-                  <strong className="text-zinc-300">{Math.ceil(totalCount / pageSize)}</strong>
+                  <strong className="text-zinc-300">{Math.ceil(processedStocks.length / pageSize)}</strong>
                 </span>
                 <button
                   onClick={() => setPageIndex(p => p + 1)}
-                  disabled={(pageIndex + 1) * pageSize >= totalCount || loading}
+                  disabled={(pageIndex + 1) * pageSize >= processedStocks.length || loading}
                   className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -994,7 +1056,7 @@ export default function ScreenerDashboard() {
                   </table>
                 </div>
 
-                {/* Pivot Points Table - Spans Full Width */}
+                {/* Pivot Points Table */}
                 <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col lg:col-span-2">
                   <h3 className="text-sm font-mono text-zinc-300 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
                     Pivot Points Support & Resistance
@@ -1016,7 +1078,7 @@ export default function ScreenerDashboard() {
                       <tbody className="divide-y divide-zinc-900">
                         {symbolDetail?.pivotPoints.map((p) => (
                           <tr key={p.pivotType} className="hover:bg-zinc-900/10">
-                            <td className="py-3 font-semibold text-zinc-300">{p.pivotType}</td>
+                            <td className="py-3 font-semibold text-zinc-350">{p.pivotType}</td>
                             <td className="py-3 text-right text-rose-500/70">{p.s3?.toLocaleString("id-ID") || "—"}</td>
                             <td className="py-3 text-right text-rose-500/70">{p.s2?.toLocaleString("id-ID") || "—"}</td>
                             <td className="py-3 text-right text-rose-450">{p.s1?.toLocaleString("id-ID") || "—"}</td>

@@ -77,30 +77,11 @@ const SCAN_COLUMNS_MAPPING: Record<string, string[]> = {
   ]
 };
 
-// Helper to determine the rating score for custom sort order (Strong Sell to Strong Buy)
-const getRatingScore = (val: any): number => {
-  if (typeof val === "number") return val; // if numeric aggregate Recommend.All
-  if (typeof val === "string") {
-    const l = val.toLowerCase();
-    if (l.includes("strong buy")) return 2;
-    if (l.includes("strong sell")) return -2;
-    if (l.includes("buy")) return 1;
-    if (l.includes("sell")) return -1;
-  }
-  return 0;
-};
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
       category = "overview",
-      search = "",
-      sortField = "market_cap_basic",
-      sortOrder = "desc",
-      sector = "",
-      rangeStart = 0,
-      rangeEnd = 100,
       snapshotDate = "latest"
     } = body;
 
@@ -108,7 +89,6 @@ export async function POST(request: Request) {
     const targetDate = snapshotDate === "latest" ? new Date().toISOString().split("T")[0] : snapshotDate;
 
     let stocks: any[] = [];
-    let totalCount = 0;
     let fetchedFromDb = false;
 
     // 1. Try to query from Supabase database
@@ -139,21 +119,6 @@ export async function POST(request: Request) {
             sector: row.stocks?.sector || "",
             ...row.data
           }));
-          
-          // Apply sector filter in memory
-          if (sector) {
-            stocks = stocks.filter(s => s.sector === sector);
-          }
-
-          // Apply search filter in memory
-          if (search) {
-            const sLower = search.toLowerCase();
-            stocks = stocks.filter(
-              s => s.ticker.toLowerCase().includes(sLower) || s.name.toLowerCase().includes(sLower)
-            );
-          }
-
-          totalCount = stocks.length;
           fetchedFromDb = true;
         }
       } catch (dbErr) {
@@ -163,17 +128,12 @@ export async function POST(request: Request) {
 
     // 2. Fetch from TradingView directly if not found in DB
     if (!fetchedFromDb) {
-      const filters: any[] = [{ left: "is_primary", operation: "equal", right: true }];
-      if (sector) {
-        filters.push({ left: "sector", operation: "equal", right: sector });
-      }
-
       const payload = {
         columns,
-        filter: filters,
+        filter: [{ left: "is_primary", operation: "equal", right: true }],
         ignore_unknown_fields: false,
         options: { lang: "en" },
-        range: [0, 900], // Fetch all idx stocks (~900) so we can cache them all in DB
+        range: [0, 950], // Fetch all idx stocks to cache
         sort: { sortBy: "market_cap_basic", sortOrder: "desc" },
         markets: ["indonesia"],
         filter2: {
@@ -224,19 +184,6 @@ export async function POST(request: Request) {
         }
       };
 
-      if (search) {
-        const searchLower = search.toLowerCase();
-        (payload.filter2.operands as any).push({
-          operation: {
-            operator: "or",
-            operands: [
-              { expression: { left: "name", operation: "match", right: searchLower } },
-              { expression: { left: "description", operation: "match", right: searchLower } }
-            ]
-          }
-        });
-      }
-
       const response = await fetch("https://scanner.tradingview.com/indonesia/scan?label-product=screener-stock", {
         method: "POST",
         headers: {
@@ -265,20 +212,12 @@ export async function POST(request: Request) {
           mapped[col] = item.d[idx];
         });
 
-        // Set sector if present in overview
-        if (mapped.sector) {
-          mapped.sector = mapped.sector;
-        }
-
         return mapped;
       });
 
-      totalCount = stocks.length;
-
-      // 3. Write background cache to Supabase so we don't spam TradingView
+      // 3. Write background cache to Supabase
       if (supabaseUrl && supabaseKey && stocks.length > 0) {
         try {
-          // Prepare stock master items
           const stockMasterList = stocks.map(s => ({
             symbol: s.symbol,
             ticker: s.ticker,
@@ -289,10 +228,8 @@ export async function POST(request: Request) {
             updated_at: new Date().toISOString()
           }));
 
-          // Upsert master stocks
           await supabase.from("stocks").upsert(stockMasterList, { onConflict: "symbol" });
 
-          // Prepare snapshot items
           const snapshotItems = stocks.map(s => {
             const dataCopy = { ...s };
             delete dataCopy.symbol;
@@ -309,7 +246,6 @@ export async function POST(request: Request) {
             };
           });
 
-          // Upsert snapshots
           await supabase.from("stock_snapshots").upsert(snapshotItems, { onConflict: "symbol,snapshot_date,category" });
         } catch (dbWriteErr) {
           console.error("Failed to save snapshots to Supabase:", dbWriteErr);
@@ -317,38 +253,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Sort and Paginate in memory
-    // Implement correct custom sort hierarchy for rating fields
-    const isRatingField = sortField.includes("Rating");
-    
-    stocks.sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-
-      if (isRatingField) {
-        valA = getRatingScore(valA);
-        valB = getRatingScore(valB);
-      }
-
-      if (valA === undefined || valA === null) return 1;
-      if (valB === undefined || valB === null) return -1;
-
-      if (typeof valA === "number" && typeof valB === "number") {
-        return sortOrder === "desc" ? valB - valA : valA - valB;
-      }
-
-      const strA = String(valA).toLowerCase();
-      const strB = String(valB).toLowerCase();
-      return sortOrder === "desc"
-        ? strB.localeCompare(strA)
-        : strA.localeCompare(strB);
-    });
-
-    const paginatedStocks = stocks.slice(rangeStart, rangeEnd);
-
+    // Return the entire list to the client so it can do instant client-side filtering, sorting, pagination
     return NextResponse.json({
-      totalCount,
-      stocks: paginatedStocks
+      totalCount: stocks.length,
+      stocks
     });
   } catch (error: any) {
     console.error("Scan API Error:", error);
