@@ -107,6 +107,7 @@ export async function POST(request: Request) {
             symbol,
             snapshot_date,
             data,
+            created_at,
             stocks (
               ticker,
               name,
@@ -118,15 +119,25 @@ export async function POST(request: Request) {
           .eq("category", category);
 
         if (!error && dbData && dbData.length > 0) {
-          stocks = dbData.map((row: any) => ({
-            symbol: row.symbol,
-            ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
-            name: row.stocks?.name || row.symbol.replace("IDX:", ""),
-            logoId: row.stocks?.logo_id || "",
-            sector: row.stocks?.sector || "",
-            ...row.data
-          }));
-          fetchedFromDb = true;
+          const firstRecord = dbData[0];
+          const createdAt = new Date(firstRecord.created_at).getTime();
+          const ageMinutes = (Date.now() - createdAt) / (1000 * 60);
+          
+          const isToday = targetDate === new Date().toISOString().split("T")[0];
+          
+          // If it is today's data, we only use cache if it was fetched less than 5 minutes ago.
+          // Otherwise, we fetch fresh prices from TradingView and upsert to update the database.
+          if (!isToday || ageMinutes < 5) {
+            stocks = dbData.map((row: any) => ({
+              symbol: row.symbol,
+              ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
+              name: row.stocks?.name || row.symbol.replace("IDX:", ""),
+              logoId: row.stocks?.logo_id || "",
+              sector: row.stocks?.sector || "",
+              ...row.data
+            }));
+            fetchedFromDb = true;
+          }
         }
       } catch (dbErr) {
         console.warn("Supabase Fetch Error, falling back to direct TradingView fetch:", dbErr);
