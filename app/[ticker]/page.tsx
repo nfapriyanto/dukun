@@ -469,6 +469,8 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                           <th className="pb-2.5 font-normal px-2 pl-0">Date</th>
                           <th className="pb-2.5 font-normal text-right px-2" title="Outstanding Shares (Jumlah Saham Beredar)">Total Shares</th>
                           <th className="pb-2.5 font-normal text-right px-2" title="Harga Penutupan Pasar (Price)">Price</th>
+                          <th className="pb-2.5 font-normal text-center px-4 w-[160px]"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Perbandingan Kepemilikan Investor Lokal (Domestik) vs Asing (Foreign)">L/F Ratio</span></th>
+                          <th className="pb-2.5 font-normal text-center px-4 w-[160px]"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Perbandingan Kepemilikan Investor Ritel Perorangan (ID) vs Lembaga/Institusi">Retail/Inst</span></th>
                           <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Retail Individual (Ritel Perorangan)">L-ID</span></th>
                           <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Mutual Fund (Reksadana)">L-MF</span></th>
                           <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Corporate (Korporasi/Perusahaan)">L-CP</span></th>
@@ -495,12 +497,40 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
                         {symbolDetail.kseiHistory.map((h: any) => {
                           const dateObj = new Date(h.snapshot_date);
                           const formattedDate = dateObj.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+                          const total = h.local_total + h.foreign_total;
+                          const localPct = total > 0 ? (h.local_total / total) * 100 : 0;
+                          const foreignPct = total > 0 ? (h.foreign_total / total) * 100 : 0;
+
+                          const retailTotal = h.local_id + h.foreign_id;
+                          const retailPct = total > 0 ? (retailTotal / total) * 100 : 0;
+                          const instPct = 100 - retailPct;
 
                           return (
                             <tr key={h.id} className="hover:bg-zinc-900/10 transition-colors">
                               <td className="py-3 px-2 pl-0 font-semibold text-zinc-300">{formattedDate}</td>
                               <td className="py-3 px-2 text-right text-zinc-200 tabular-nums">{h.sec_num.toLocaleString("id-ID")}</td>
                               <td className="py-3 px-2 text-right text-zinc-200 tabular-nums">{h.price ? h.price.toLocaleString("id-ID") : "—"}</td>
+                              {/* Ratios */}
+                              <td className="py-3 px-4 text-center">
+                                <div className="flex items-center gap-1.5 justify-center">
+                                  <span className="text-[10px] text-emerald-450 font-bold w-8 text-right">{localPct.toFixed(0)}%</span>
+                                  <div className="w-12 h-1.5 rounded bg-zinc-800 overflow-hidden flex">
+                                    <div className="h-full bg-emerald-500" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />
+                                    <div className="h-full bg-indigo-500" style={{ width: `${foreignPct}%` }} title={`Foreign: ${foreignPct.toFixed(1)}%`} />
+                                  </div>
+                                  <span className="text-[10px] text-indigo-400 font-bold w-8 text-left">{foreignPct.toFixed(0)}%</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <div className="flex items-center gap-1.5 justify-center">
+                                  <span className="text-[10px] text-zinc-350 font-bold w-8 text-right">{retailPct.toFixed(0)}%</span>
+                                  <div className="w-12 h-1.5 rounded bg-zinc-800 overflow-hidden flex">
+                                    <div className="h-full bg-zinc-400" style={{ width: `${retailPct}%` }} title={`Retail: ${retailPct.toFixed(1)}%`} />
+                                    <div className="h-full bg-zinc-600" style={{ width: `${instPct}%` }} title={`Institutional: ${instPct.toFixed(1)}%`} />
+                                  </div>
+                                  <span className="text-[10px] text-zinc-550 font-bold w-8 text-left">{instPct.toFixed(0)}%</span>
+                                </div>
+                              </td>
                               {/* Local */}
                               <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_id.toLocaleString("id-ID")}</td>
                               <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_mf.toLocaleString("id-ID")}</td>
