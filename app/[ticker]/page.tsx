@@ -453,120 +453,77 @@ export default function SymbolDetailPage({ params }: { params: Promise<{ ticker:
 
               {/* KSEI Holdings Table */}
               <div className="bg-zinc-900/30 border border-zinc-900 p-6 rounded-2xl flex flex-col lg:col-span-2">
-                <h3 className="text-sm font-mono text-zinc-350 uppercase tracking-wider border-b border-zinc-905 pb-3 mb-4 font-bold">
-                  Kepemilikan Efek KSEI (Lokal vs Asing)
-                </h3>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-zinc-905 pb-3 mb-4 gap-2">
+                  <h3 className="text-sm font-mono text-zinc-350 uppercase tracking-wider font-bold">
+                    Kepemilikan Efek KSEI (Lokal vs Asing)
+                  </h3>
+                  <span className="text-[10px] font-mono text-zinc-500">
+                    * Arahkan kursor pada kode kolom untuk melihat detail tipe investor
+                  </span>
+                </div>
                 {symbolDetail?.kseiHistory && symbolDetail.kseiHistory.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs font-mono text-left whitespace-nowrap min-w-[700px]">
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-xs font-mono text-left whitespace-nowrap">
                       <thead>
                         <tr className="text-zinc-500 border-b border-zinc-900 pb-1.5">
-                          <th className="pb-2.5 font-normal">Date</th>
-                          <th className="pb-2.5 font-normal text-right">Total Shares</th>
-                          <th className="pb-2.5 font-normal text-center w-[180px]">Local / Foreign Ratio</th>
-                          <th className="pb-2.5 font-normal text-right">Local Retail / Inst %</th>
-                          <th className="pb-2.5 font-normal text-right">Foreign Retail / Inst %</th>
+                          <th className="pb-2.5 font-normal px-2 pl-0">Date</th>
+                          <th className="pb-2.5 font-normal text-right px-2" title="Outstanding Shares (Jumlah Saham Beredar)">Total Shares</th>
+                          <th className="pb-2.5 font-normal text-right px-2" title="Harga Penutupan Pasar (Price)">Price</th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Retail Individual (Ritel Perorangan)">L-ID</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Mutual Fund (Reksadana)">L-MF</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Corporate (Korporasi/Perusahaan)">L-CP</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Pension Fund (Dana Pensiun)">L-PF</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Financial Institution / Investment Bank">L-IB</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Insurance (Asuransi)">L-IS</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Securities Company (Perusahaan Sekuritas)">L-SC</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Foundation (Yayasan)">L-FD</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Lokal - Others (Lain-lain)">L-OT</span></th>
+                          <th className="pb-2.5 font-bold text-right px-2 text-emerald-450" title="Total Saham Dimiliki Pihak Domestik/Lokal">L-Total</th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Retail Individual (Ritel Perorangan)">F-ID</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Mutual Fund (Reksadana)">F-MF</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Corporate (Korporasi/Perusahaan)">F-CP</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Pension Fund (Dana Pensiun)">F-PF</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Financial Institution / Investment Bank">F-IB</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Insurance (Asuransi)">F-IS</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Securities Company (Perusahaan Sekuritas)">F-SC</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Foundation (Yayasan)">F-FD</span></th>
+                          <th className="pb-2.5 font-normal text-right px-2"><span className="cursor-help border-b border-dashed border-zinc-700/60 pb-0.5" title="Asing - Others (Lain-lain)">F-OT</span></th>
+                          <th className="pb-2.5 font-bold text-right px-2 pr-0 text-indigo-400" title="Total Saham Dimiliki Pihak Asing">F-Total</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-900">
                         {symbolDetail.kseiHistory.map((h: any) => {
-                          const total = h.local_total + h.foreign_total;
-                          const localPct = total > 0 ? (h.local_total / total) * 100 : 0;
-                          const foreignPct = total > 0 ? (h.foreign_total / total) * 100 : 0;
-
-                          const localRetailPct = h.local_total > 0 ? (h.local_id / h.local_total) * 100 : 0;
-                          const localInstPct = 100 - localRetailPct;
-
-                          const foreignRetailPct = h.foreign_total > 0 ? (h.foreign_id / h.foreign_total) * 100 : 0;
-                          const foreignInstPct = 100 - foreignRetailPct;
-
                           const dateObj = new Date(h.snapshot_date);
                           const formattedDate = dateObj.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
-                          const isExpanded = expandedKseiRow === String(h.id);
-
                           return (
-                            <>
-                              <tr 
-                                key={h.id} 
-                                onClick={() => setExpandedKseiRow(isExpanded ? null : h.id)}
-                                className="hover:bg-zinc-900/25 transition-all cursor-pointer border-b border-zinc-900/60"
-                              >
-                                <td className="py-4 font-semibold text-zinc-300">{formattedDate}</td>
-                                <td className="py-4 text-right text-zinc-200 tabular-nums">
-                                  {h.sec_num.toLocaleString("id-ID")}
-                                </td>
-                                <td className="py-4 px-4 text-center">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-emerald-450 font-bold w-10 text-right">{localPct.toFixed(0)}%</span>
-                                    <div className="flex-1 h-2 rounded bg-zinc-800 overflow-hidden flex">
-                                      <div className="h-full bg-emerald-500" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />
-                                      <div className="h-full bg-indigo-500" style={{ width: `${foreignPct}%` }} title={`Foreign: ${foreignPct.toFixed(1)}%`} />
-                                    </div>
-                                    <span className="text-[10px] text-indigo-400 font-bold w-10 text-left">{foreignPct.toFixed(0)}%</span>
-                                  </div>
-                                </td>
-                                <td className="py-4 text-right tabular-nums text-zinc-400">
-                                  <span className="text-zinc-200" title={`Retail: ${h.local_id.toLocaleString("id-ID")}`}>{localRetailPct.toFixed(0)}%</span>
-                                  <span className="text-zinc-500"> / </span>
-                                  <span className="text-zinc-300" title={`Institutional: ${(h.local_total - h.local_id).toLocaleString("id-ID")}`}>{localInstPct.toFixed(0)}%</span>
-                                </td>
-                                <td className="py-4 text-right tabular-nums text-zinc-400">
-                                  <span className="text-zinc-200" title={`Retail: ${h.foreign_id.toLocaleString("id-ID")}`}>{foreignRetailPct.toFixed(0)}%</span>
-                                  <span className="text-zinc-500"> / </span>
-                                  <span className="text-zinc-300" title={`Institutional: ${(h.foreign_total - h.foreign_id).toLocaleString("id-ID")}`}>{foreignInstPct.toFixed(0)}%</span>
-                                </td>
-                              </tr>
-                              {isExpanded && (
-                                <tr className="bg-zinc-950/40">
-                                  <td colSpan={5} className="p-4 border-t border-b border-zinc-900">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                      {/* Local Breakdown */}
-                                      <div className="bg-zinc-900/20 p-4 rounded-xl border border-zinc-800/40">
-                                        <h4 className="text-emerald-400 font-bold text-xs mb-3 flex items-center gap-1.5 uppercase tracking-wide">
-                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                          Lokal Breakdown (Shares)
-                                        </h4>
-                                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-[11px] font-mono text-zinc-400">
-                                          <span>Retail Individual (ID):</span><span className="text-right text-zinc-200">{h.local_id.toLocaleString("id-ID")}</span>
-                                          <span>Mutual Fund (MF):</span><span className="text-right text-zinc-200">{h.local_mf.toLocaleString("id-ID")}</span>
-                                          <span>Corporate (CP):</span><span className="text-right text-zinc-200">{h.local_cp.toLocaleString("id-ID")}</span>
-                                          <span>Pension Fund (PF):</span><span className="text-right text-zinc-200">{h.local_pf.toLocaleString("id-ID")}</span>
-                                          <span>Financial Institution (IB):</span><span className="text-right text-zinc-200">{h.local_ib.toLocaleString("id-ID")}</span>
-                                          <span>Insurance (IS):</span><span className="text-right text-zinc-200">{h.local_is.toLocaleString("id-ID")}</span>
-                                          <span>Securities Company (SC):</span><span className="text-right text-zinc-200">{h.local_sc.toLocaleString("id-ID")}</span>
-                                          <span>Foundation (FD):</span><span className="text-right text-zinc-200">{h.local_fd.toLocaleString("id-ID")}</span>
-                                          <span>Others (OT):</span><span className="text-right text-zinc-200">{h.local_ot.toLocaleString("id-ID")}</span>
-                                          <div className="col-span-2 border-t border-zinc-900/60 my-1"></div>
-                                          <span className="font-bold text-zinc-300">Total Lokal:</span><span className="text-right font-bold text-emerald-450">{h.local_total.toLocaleString("id-ID")}</span>
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Foreign Breakdown */}
-                                      <div className="bg-zinc-900/20 p-4 rounded-xl border border-zinc-800/40">
-                                        <h4 className="text-indigo-400 font-bold text-xs mb-3 flex items-center gap-1.5 uppercase tracking-wide">
-                                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                          Asing Breakdown (Shares)
-                                        </h4>
-                                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-[11px] font-mono text-zinc-400">
-                                          <span>Retail Individual (ID):</span><span className="text-right text-zinc-200">{h.foreign_id.toLocaleString("id-ID")}</span>
-                                          <span>Mutual Fund (MF):</span><span className="text-right text-zinc-200">{h.foreign_mf.toLocaleString("id-ID")}</span>
-                                          <span>Corporate (CP):</span><span className="text-right text-zinc-200">{h.foreign_cp.toLocaleString("id-ID")}</span>
-                                          <span>Pension Fund (PF):</span><span className="text-right text-zinc-200">{h.foreign_pf.toLocaleString("id-ID")}</span>
-                                          <span>Financial Institution (IB):</span><span className="text-right text-zinc-200">{h.foreign_ib.toLocaleString("id-ID")}</span>
-                                          <span>Insurance (IS):</span><span className="text-right text-zinc-200">{h.foreign_is.toLocaleString("id-ID")}</span>
-                                          <span>Securities Company (SC):</span><span className="text-right text-zinc-200">{h.foreign_sc.toLocaleString("id-ID")}</span>
-                                          <span>Foundation (FD):</span><span className="text-right text-zinc-200">{h.foreign_fd.toLocaleString("id-ID")}</span>
-                                          <span>Others (OT):</span><span className="text-right text-zinc-200">{h.foreign_ot.toLocaleString("id-ID")}</span>
-                                          <div className="col-span-2 border-t border-zinc-900/60 my-1"></div>
-                                          <span className="font-bold text-zinc-300">Total Asing:</span><span className="text-right font-bold text-indigo-455">{h.foreign_total.toLocaleString("id-ID")}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </>
+                            <tr key={h.id} className="hover:bg-zinc-900/10 transition-colors">
+                              <td className="py-3 px-2 pl-0 font-semibold text-zinc-300">{formattedDate}</td>
+                              <td className="py-3 px-2 text-right text-zinc-200 tabular-nums">{h.sec_num.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-200 tabular-nums">{h.price ? h.price.toLocaleString("id-ID") : "—"}</td>
+                              {/* Local */}
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_id.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_mf.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_cp.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_pf.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_ib.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_is.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_sc.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_fd.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.local_ot.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-emerald-450 font-bold tabular-nums">{h.local_total.toLocaleString("id-ID")}</td>
+                              {/* Foreign */}
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_id.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_mf.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_cp.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_pf.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_ib.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_is.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_sc.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_fd.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-zinc-400 tabular-nums">{h.foreign_ot.toLocaleString("id-ID")}</td>
+                              <td className="py-3 px-2 text-right text-indigo-400 font-bold pr-0 tabular-nums">{h.foreign_total.toLocaleString("id-ID")}</td>
+                            </tr>
                           );
                         })}
                       </tbody>
