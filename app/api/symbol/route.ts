@@ -228,7 +228,12 @@ export async function GET(request: Request) {
         "SELECT * FROM public.ksei_holdings WHERE ticker = $1 ORDER BY snapshot_date DESC",
         [ticker]
       );
-      kseiHistory = kseiRes.rows;
+      kseiHistory = kseiRes.rows.map((row: any) => ({
+        id: row.id,
+        snapshot_date: row.snapshot_date,
+        ticker: row.ticker,
+        ...row.data
+      }));
     } catch (dbErr) {
       console.warn("Failed to fetch Local PostgreSQL symbol metadata", dbErr);
     }
