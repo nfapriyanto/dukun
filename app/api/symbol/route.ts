@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import * as db from "@/lib/db";
 import { TechnicalIndicator, PivotPoints, Timeframe } from "../../types";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const BASE_FIELDS = [
   "Recommend.Other", "Recommend.All", "Recommend.MA", "RSI", "RSI[1]",
@@ -214,33 +210,27 @@ export async function GET(request: Request) {
       }
     ];
 
-    // Query logo_id and KSEI holding history from Supabase
+    // Query logo_id and KSEI holding history from Local PostgreSQL
     let logoId = "";
     let kseiHistory: any[] = [];
     const ticker = symbol.replace("IDX:", "").toUpperCase();
 
-    if (supabaseUrl && supabaseKey) {
-      try {
-        const { data: stockRow } = await supabase
-          .from("stocks")
-          .select("logo_id")
-          .eq("symbol", symbol)
-          .single();
-        if (stockRow) {
-          logoId = stockRow.logo_id || "";
-        }
-
-        const { data: kseiData } = await supabase
-          .from("ksei_holdings")
-          .select("*")
-          .eq("ticker", ticker)
-          .order("snapshot_date", { ascending: false });
-        if (kseiData) {
-          kseiHistory = kseiData;
-        }
-      } catch (dbErr) {
-        console.warn("Failed to fetch Supabase symbol metadata", dbErr);
+    try {
+      const stockRes = await db.query(
+        "SELECT logo_id FROM public.stocks WHERE symbol = $1 LIMIT 1",
+        [symbol]
+      );
+      if (stockRes.rows.length > 0) {
+        logoId = stockRes.rows[0].logo_id || "";
       }
+
+      const kseiRes = await db.query(
+        "SELECT * FROM public.ksei_holdings WHERE ticker = $1 ORDER BY snapshot_date DESC",
+        [ticker]
+      );
+      kseiHistory = kseiRes.rows;
+    } catch (dbErr) {
+      console.warn("Failed to fetch Local PostgreSQL symbol metadata", dbErr);
     }
 
     const result = {

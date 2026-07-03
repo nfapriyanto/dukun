@@ -1,38 +1,34 @@
 const fs = require('fs');
 const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
 
-// 1. Read .env.local manually to get Supabase credentials
+// 1. Load database credentials from .env.local
 const envPath = path.join(__dirname, '..', '.env.local');
-let supabaseUrl = '';
-let supabaseKey = '';
+let databaseUrl = 'postgresql://postgres:postgrespassword@localhost:5432/dukun_db';
 
 try {
-  const envContent = fs.readFileSync(envPath, 'utf8');
-  const lines = envContent.split('\n');
-  for (const line of lines) {
-    const parts = line.trim().split('=');
-    if (parts.length >= 2) {
-      const key = parts[0].trim();
-      const val = parts.slice(1).join('=').trim();
-      if (key === 'NEXT_PUBLIC_SUPABASE_URL') supabaseUrl = val;
-      if (key === 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') supabaseKey = val;
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const parts = line.trim().split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const val = parts.slice(1).join('=').trim();
+        if (key === 'DATABASE_URL') databaseUrl = val;
+      }
     }
   }
 } catch (e) {
   console.error('Failed to read .env.local:', e);
 }
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Supabase credentials not found in .env.local');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const pool = new Pool({
+  connectionString: databaseUrl
+});
 
 // 2. Parse Date Helper
 function parseKseiDate(dateStr) {
-  // format: "30-JUN-2026"
   const parts = dateStr.split('-');
   if (parts.length !== 3) return null;
   const day = parts[0];
@@ -71,6 +67,19 @@ async function main() {
 
   const header = lines[0].split('|');
   console.log(`Parsing file with headers: ${header.slice(0, 5).join(', ')}...`);
+
+  // Ensure tables exist before running import
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.ksei_holdings (
+      id SERIAL PRIMARY KEY,
+      snapshot_date DATE NOT NULL,
+      ticker TEXT NOT NULL,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT uniq_ksei_date_ticker UNIQUE (snapshot_date, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ksei_ticker ON public.ksei_holdings (ticker);
+  `);
 
   const records = [];
   let skipped = 0;
@@ -123,23 +132,38 @@ async function main() {
   }
 
   console.log(`Successfully parsed ${records.length} records. Skipped ${skipped} lines.`);
-  console.log('Uploading records in batches to Supabase...');
+  console.log('Uploading records in batches to local database...');
 
-  // Batch insert to prevent payload size limits
-  const batchSize = 200;
+  const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
-    const { error } = await supabase
-      .from('ksei_holdings')
-      .upsert(batch, { onConflict: 'snapshot_date,ticker' });
+    
+    const values = [];
+    const placeholders = batch.map((r, idx) => {
+      const base = idx * 3;
+      const dataObject = { ...r };
+      delete dataObject.snapshot_date;
+      delete dataObject.ticker;
+      
+      values.push(r.snapshot_date, r.ticker, JSON.stringify(dataObject));
+      return `($${base + 1}, $${base + 2}, $${base + 3})`;
+    }).join(', ');
 
-    if (error) {
-      console.error(`Error uploading batch starting at index ${i}:`, error);
-    } else {
+    try {
+      await pool.query(
+        `INSERT INTO public.ksei_holdings (snapshot_date, ticker, data)
+         VALUES ${placeholders}
+         ON CONFLICT (snapshot_date, ticker) DO UPDATE
+         SET data = EXCLUDED.data`,
+        values
+      );
       console.log(`Uploaded batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(records.length / batchSize)}`);
+    } catch (upsertErr) {
+      console.error(`Error uploading batch starting at index ${i}:`, upsertErr);
     }
   }
 
+  await pool.end();
   console.log('Import completed successfully!');
 }
 

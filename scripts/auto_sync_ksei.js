@@ -2,39 +2,35 @@ const fs = require('fs');
 const path = require('path');
 const http = require('https');
 const { execSync } = require('child_process');
-const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
 
-// 1. Load Supabase credentials from .env.local
+// 1. Load database credentials from .env.local
 const envPath = path.join(__dirname, '..', '.env.local');
-let supabaseUrl = '';
-let supabaseKey = '';
+let databaseUrl = 'postgresql://postgres:postgrespassword@localhost:5432/dukun_db';
 
 try {
-  const envContent = fs.readFileSync(envPath, 'utf8');
-  const lines = envContent.split('\n');
-  for (const line of lines) {
-    const parts = line.trim().split('=');
-    if (parts.length >= 2) {
-      const key = parts[0].trim();
-      const val = parts.slice(1).join('=').trim();
-      if (key === 'NEXT_PUBLIC_SUPABASE_URL') supabaseUrl = val;
-      if (key === 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') supabaseKey = val;
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const parts = line.trim().split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const val = parts.slice(1).join('=').trim();
+        if (key === 'DATABASE_URL') databaseUrl = val;
+      }
     }
   }
 } catch (e) {
   console.error('Failed to read .env.local:', e);
 }
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Supabase credentials not found in .env.local');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const pool = new Pool({
+  connectionString: databaseUrl
+});
 
 // Helper to calculate last business day of a month
 function getLastBusinessDay(year, month) {
-  // month is 0-indexed (0 = Jan, 11 = Dec)
   const lastDay = new Date(year, month + 1, 0);
   let dayOfWeek = lastDay.getDay(); // 0 = Sun, 6 = Sat
   
@@ -97,20 +93,19 @@ async function syncMonth(year, month) {
   const targetDate = formatDateString(yyyymmdd);
   console.log(`Checking composition for: ${targetDate} (WIB Date Key: ${yyyymmdd})...`);
 
-  // 1. Check if date already exists in Supabase
-  const { data: existingCount, error: checkError } = await supabase
-    .from('ksei_holdings')
-    .select('id')
-    .eq('snapshot_date', targetDate)
-    .limit(1);
+  // 1. Check if date already exists in Local PostgreSQL
+  try {
+    const res = await pool.query(
+      'SELECT 1 FROM public.ksei_holdings WHERE snapshot_date = $1 LIMIT 1',
+      [targetDate]
+    );
 
-  if (checkError) {
+    if (res.rows.length > 0) {
+      console.log(`-> KSEI data for ${targetDate} already synced in Database. Skipping.`);
+      return;
+    }
+  } catch (checkError) {
     console.error(`Check error for ${targetDate}:`, checkError);
-    return;
-  }
-
-  if (existingCount && existingCount.length > 0) {
-    console.log(`-> KSEI data for ${targetDate} already synced in Supabase. Skipping.`);
     return;
   }
 
@@ -185,11 +180,29 @@ async function syncMonth(year, month) {
       });
     }
 
-    console.log(`-> Uploading ${records.length} records to Supabase...`);
-    const batchSize = 200;
+    console.log(`-> Uploading ${records.length} records to local database...`);
+    const batchSize = 100;
     for (let i = 0; i < records.length; i += batchSize) {
       const batch = records.slice(i, i + batchSize);
-      await supabase.from('ksei_holdings').upsert(batch, { onConflict: 'snapshot_date,ticker' });
+      
+      const values = [];
+      const placeholders = batch.map((r, idx) => {
+        const base = idx * 3;
+        const dataObject = { ...r };
+        delete dataObject.snapshot_date;
+        delete dataObject.ticker;
+        
+        values.push(r.snapshot_date, r.ticker, JSON.stringify(dataObject));
+        return `($${base + 1}, $${base + 2}, $${base + 3})`;
+      }).join(', ');
+
+      await pool.query(
+        `INSERT INTO public.ksei_holdings (snapshot_date, ticker, data)
+         VALUES ${placeholders}
+         ON CONFLICT (snapshot_date, ticker) DO UPDATE
+         SET data = EXCLUDED.data`,
+        values
+      );
     }
 
     console.log(`-> Successfully synced KSEI data for ${targetDate}!`);
@@ -211,6 +224,19 @@ async function syncMonth(year, month) {
 async function main() {
   console.log('=== KSEI Holding Composition Auto Sync Started ===');
   
+  // Ensure tables exist before running sync
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.ksei_holdings (
+      id SERIAL PRIMARY KEY,
+      snapshot_date DATE NOT NULL,
+      ticker TEXT NOT NULL,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT uniq_ksei_date_ticker UNIQUE (snapshot_date, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ksei_ticker ON public.ksei_holdings (ticker);
+  `);
+
   const startDate = new Date('2023-01-01');
   const endDate = new Date();
 
@@ -234,6 +260,7 @@ async function main() {
     }
   } catch (e) {}
 
+  await pool.end();
   console.log('=== KSEI Holding Composition Auto Sync Finished ===');
 }
 

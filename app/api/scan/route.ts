@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
+import * as db from "@/lib/db";
 
 const SCAN_COLUMNS_MAPPING: Record<string, string[]> = {
   overview: [
@@ -93,7 +89,7 @@ function getRatingScore(rating: string | null | undefined): number {
   return 0;
 }
 
-// Background sync helper from TradingView to Supabase
+// Background sync helper from TradingView to Local Postgres
 async function fetchTradingViewAndUpsert(targetDate: string, category: string, columns: string[]): Promise<any[]> {
   const payload = {
     columns,
@@ -135,8 +131,8 @@ async function fetchTradingViewAndUpsert(targetDate: string, category: string, c
     return mapped;
   });
 
-  // Write to Supabase asynchronously
-  if (supabaseUrl && supabaseKey && stocks.length > 0) {
+  // Write to Local PostgreSQL
+  if (stocks.length > 0) {
     try {
       const stockMasterList = stocks.map((s: any) => ({
         symbol: s.symbol,
@@ -148,7 +144,21 @@ async function fetchTradingViewAndUpsert(targetDate: string, category: string, c
         updated_at: new Date().toISOString()
       }));
 
-      await supabase.from("stocks").upsert(stockMasterList, { onConflict: "symbol" });
+      // Batch Upsert to Stocks
+      const stockValues: any[] = [];
+      const stockPlaceholders = stockMasterList.map((s: any, idx: number) => {
+        const base = idx * 7;
+        stockValues.push(s.symbol, s.ticker, s.name, s.logo_id, s.sector, s.type, s.updated_at);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
+      }).join(", ");
+
+      await db.query(
+        `INSERT INTO public.stocks (symbol, ticker, name, logo_id, sector, type, updated_at)
+         VALUES ${stockPlaceholders}
+         ON CONFLICT (symbol) DO UPDATE
+         SET ticker = EXCLUDED.ticker, name = EXCLUDED.name, logo_id = EXCLUDED.logo_id, sector = EXCLUDED.sector, type = EXCLUDED.type, updated_at = EXCLUDED.updated_at`,
+        stockValues
+      );
 
       const snapshotItems = stocks.map((s: any) => {
         const dataCopy = { ...s };
@@ -166,9 +176,23 @@ async function fetchTradingViewAndUpsert(targetDate: string, category: string, c
         };
       });
 
-      await supabase.from("stock_snapshots").upsert(snapshotItems, { onConflict: "symbol,snapshot_date,category" });
+      // Batch Upsert to Stock Snapshots
+      const snapValues: any[] = [];
+      const snapPlaceholders = snapshotItems.map((snap: any, idx: number) => {
+        const base = idx * 5;
+        snapValues.push(snap.symbol, snap.snapshot_date, snap.category, JSON.stringify(snap.data), snap.created_at);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+      }).join(", ");
+
+      await db.query(
+        `INSERT INTO public.stock_snapshots (symbol, snapshot_date, category, data, created_at)
+         VALUES ${snapPlaceholders}
+         ON CONFLICT (symbol, snapshot_date, category) DO UPDATE
+         SET data = EXCLUDED.data, created_at = EXCLUDED.created_at`,
+        snapValues
+      );
     } catch (dbWriteErr) {
-      console.error("Failed to save snapshots to Supabase:", dbWriteErr);
+      console.error("Failed to save snapshots to PostgreSQL:", dbWriteErr);
     }
   }
 
@@ -195,82 +219,74 @@ export async function POST(request: Request) {
     let stocks: any[] = [];
     let fetchedFromDb = false;
 
-    // 1. Try to query from Supabase database
-    if (supabaseUrl && supabaseKey) {
-      try {
-        const { data: dbData, error } = await supabase
-          .from("stock_snapshots")
-          .select(`
-            symbol,
-            snapshot_date,
-            data,
-            created_at,
-            stocks (
-              ticker,
-              name,
-              logo_id,
-              sector
-            )
-          `)
-          .eq("snapshot_date", targetDate)
-          .eq("category", category);
+    // 1. Try to query from PostgreSQL database
+    try {
+      const result = await db.query(
+        `SELECT ss.symbol, ss.snapshot_date, ss.data, ss.created_at,
+                s.ticker, s.name, s.logo_id, s.sector
+         FROM public.stock_snapshots ss
+         LEFT JOIN public.stocks s ON ss.symbol = s.symbol
+         WHERE ss.snapshot_date = $1 AND ss.category = $2`,
+        [targetDate, category]
+      );
 
-        if (!error && dbData && dbData.length > 0) {
-          const firstRecord = dbData[0];
-          const isToday = targetDate === new Date().toISOString().split("T")[0];
-          
-          if (!isToday) {
-            stocks = dbData.map((row: any) => ({
-              symbol: row.symbol,
-              ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
-              name: row.stocks?.name || row.symbol.replace("IDX:", ""),
-              logoId: row.stocks?.logo_id || "",
-              sector: row.stocks?.sector || "",
-              ...row.data
-            }));
-            fetchedFromDb = true;
-          } else {
-            // Get current hour/min in Jakarta (WIB)
-            const now = new Date();
-            const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour12: false, hour: "numeric", minute: "numeric" });
-            const parts = formatter.formatToParts(now);
-            const currentWibHour = parseInt(parts.find(p => p.type === "hour")?.value || "0");
-            const currentWibMin = parseInt(parts.find(p => p.type === "minute")?.value || "0");
-            const currentWibTimeVal = currentWibHour * 100 + currentWibMin;
+      const dbData = result.rows;
 
-            // Get cache creation hour/min in Jakarta (WIB)
-            const cacheTime = new Date(firstRecord.created_at);
-            const cacheParts = formatter.formatToParts(cacheTime);
-            const cacheWibHour = parseInt(cacheParts.find(p => p.type === "hour")?.value || "0");
-            const cacheWibMin = parseInt(cacheParts.find(p => p.type === "minute")?.value || "0");
-            const cacheWibTimeVal = cacheWibHour * 100 + cacheWibMin;
+      if (dbData && dbData.length > 0) {
+        const firstRecord = dbData[0];
+        const isToday = targetDate === new Date().toISOString().split("T")[0];
+        
+        if (!isToday) {
+          stocks = dbData.map((row: any) => ({
+            symbol: row.symbol,
+            ticker: row.ticker || row.symbol.replace("IDX:", ""),
+            name: row.name || row.symbol.replace("IDX:", ""),
+            logoId: row.logo_id || "",
+            sector: row.sector || "",
+            ...row.data
+          }));
+          fetchedFromDb = true;
+        } else {
+          // Get current hour/min in Jakarta (WIB)
+          const now = new Date();
+          const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour12: false, hour: "numeric", minute: "numeric" });
+          const parts = formatter.formatToParts(now);
+          const currentWibHour = parseInt(parts.find(p => p.type === "hour")?.value || "0");
+          const currentWibMin = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+          const currentWibTimeVal = currentWibHour * 100 + currentWibMin;
 
-            // If it is now after 16:00 WIB, and the cache was created before 16:00 WIB, we force fetch/upsert
-            const needsClosingUpdate = currentWibTimeVal >= 1600 && cacheWibTimeVal < 1600;
+          // Get cache creation hour/min in Jakarta (WIB)
+          const cacheTime = new Date(firstRecord.created_at);
+          const cacheParts = formatter.formatToParts(cacheTime);
+          const cacheWibHour = parseInt(cacheParts.find(p => p.type === "hour")?.value || "0");
+          const cacheWibMin = parseInt(cacheParts.find(p => p.type === "minute")?.value || "0");
+          const cacheWibTimeVal = cacheWibHour * 100 + cacheWibMin;
 
-            // Serve cached data first
-            stocks = dbData.map((row: any) => ({
-              symbol: row.symbol,
-              ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
-              name: row.stocks?.name || row.symbol.replace("IDX:", ""),
-              logoId: row.stocks?.logo_id || "",
-              sector: row.stocks?.sector || "",
-              ...row.data
-            }));
-            fetchedFromDb = true;
+          // If it is now after 16:00 WIB, and the cache was created before 16:00 WIB, we force fetch/upsert
+          const needsClosingUpdate = currentWibTimeVal >= 1600 && cacheWibTimeVal < 1600;
 
-            // If we need the final 16:00 closing prices, trigger refresh in the background
-            if (needsClosingUpdate) {
-              console.log("Triggering 16:00 WIB closing cache refresh in background...");
-              fetchTradingViewAndUpsert(targetDate, category, columns).catch(e => {
-                console.error("Background cache refresh failed:", e);
-              });
-            }
+          // Serve cached data first
+          stocks = dbData.map((row: any) => ({
+            symbol: row.symbol,
+            ticker: row.ticker || row.symbol.replace("IDX:", ""),
+            name: row.name || row.symbol.replace("IDX:", ""),
+            logoId: row.logo_id || "",
+            sector: row.sector || "",
+            ...row.data
+          }));
+          fetchedFromDb = true;
+
+          // If we need the final 16:00 closing prices, trigger refresh in the background
+          if (needsClosingUpdate) {
+            console.log("Triggering 16:00 WIB closing cache refresh in background...");
+            fetchTradingViewAndUpsert(targetDate, category, columns).catch(e => {
+              console.error("Background cache refresh failed:", e);
+            });
           }
         }
-      } catch (dbErr) {
-        console.warn("Supabase Fetch Error, falling back to direct TradingView fetch:", dbErr);
       }
+    } catch (dbErr) {
+      console.warn("PostgreSQL Fetch Error, falling back to direct TradingView fetch:", dbErr);
     }
 
     // 2. Fetch from TradingView directly if not found in DB
