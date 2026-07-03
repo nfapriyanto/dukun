@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 
 // 1. Load database credentials from .env.local
 const envPath = path.join(__dirname, '..', '.env.local');
-let databaseUrl = 'postgresql://postgres:postgrespassword@localhost:5432/dukun_db';
+let databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@localhost:5432/dukun_db';
 
 try {
   if (fs.existsSync(envPath)) {
