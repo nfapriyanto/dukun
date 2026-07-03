@@ -648,18 +648,29 @@ export default function ScreenerDashboard() {
                               {col === "candlestick_patterns_1D" ? (
                                 <div className="flex gap-1.5 flex-wrap justify-start">
                                   {Array.isArray(val) && val.length > 0 ? (
-                                    val.map((pattern: string) => (
-                                      <img
-                                        key={pattern}
-                                        src={`https://s3-symbol-logo.tradingview.com/candlepattern/${pattern}.svg`}
-                                        alt={pattern}
-                                        title={pattern.replace(/_/g, " ")}
-                                        className="h-5 w-5 bg-zinc-800 rounded p-0.5"
-                                        onError={(e) => {
-                                          (e.target as HTMLElement).style.display = "none";
-                                        }}
-                                      />
-                                    ))
+                                    val.map((pattern: string) => {
+                                      let name = pattern.replace(/_/g, "-");
+                                      name = name
+                                        .replace("-bullish", "-light")
+                                        .replace("-bearish", "-light")
+                                        .replace("-white", "-light")
+                                        .replace("-black", "-light");
+                                      if (!name.endsWith("-light")) {
+                                        name += "-light";
+                                      }
+                                      return (
+                                        <img
+                                          key={pattern}
+                                          src={`https://s3-symbol-logo.tradingview.com/candlepattern/${name}.svg`}
+                                          alt={pattern}
+                                          title={pattern.replace(/_/g, " ")}
+                                          className="h-5 w-5 bg-zinc-800 rounded p-0.5"
+                                          onError={(e) => {
+                                            (e.target as HTMLElement).style.display = "none";
+                                          }}
+                                        />
+                                      );
+                                    })
                                   ) : (
                                     <span className="text-zinc-600">—</span>
                                   )}
