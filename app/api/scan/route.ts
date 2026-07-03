@@ -82,17 +82,114 @@ const ALL_UNIQUE_COLUMNS = [
   ...Array.from(new Set(Object.values(SCAN_COLUMNS_MAPPING).flat().filter(c => c !== "ticker-view")))
 ];
 
+function getRatingScore(rating: string | null | undefined): number {
+  if (!rating) return 0;
+  const cleaned = rating.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  if (cleaned === "strongbuy") return 2;
+  if (cleaned === "buy") return 1;
+  if (cleaned === "neutral" || cleaned === "norating") return 0;
+  if (cleaned === "sell") return -1;
+  if (cleaned === "strongsell") return -2;
+  return 0;
+}
+
+// Background sync helper from TradingView to Supabase
+async function fetchTradingViewAndUpsert(targetDate: string, category: string, columns: string[]): Promise<any[]> {
+  const payload = {
+    columns,
+    filter: [{ left: "is_primary", operation: "equal", right: true }],
+    ignore_unknown_fields: false,
+    options: { lang: "en" },
+    range: [0, 950],
+    sort: { sortBy: "market_cap_basic", sortOrder: "desc" },
+    symbols: { query: { types: ["stock"] }, uuid: "idx-stocks" }
+  };
+
+  const response = await fetch("https://scanner.tradingview.com/indonesia/scan?label-product=screener-stock", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`TradingView Scan API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const stocks = data.data.map((item: any) => {
+    const mapped: Record<string, any> = {
+      symbol: item.s,
+      ticker: item.d[0]?.name || item.s.replace("IDX:", ""),
+      name: item.d[0]?.description || item.d[0]?.name || item.s.replace("IDX:", ""),
+      logoId: item.d[0]?.logoid || item.d[0]?.logo?.logoid || "",
+    };
+
+    columns.forEach((col, idx) => {
+      if (col === "ticker-view") return;
+      mapped[col] = item.d[idx];
+    });
+
+    return mapped;
+  });
+
+  // Write to Supabase asynchronously
+  if (supabaseUrl && supabaseKey && stocks.length > 0) {
+    try {
+      const stockMasterList = stocks.map((s: any) => ({
+        symbol: s.symbol,
+        ticker: s.ticker,
+        name: s.name,
+        logo_id: s.logoId,
+        sector: s.sector || "",
+        type: s.type || "stock",
+        updated_at: new Date().toISOString()
+      }));
+
+      await supabase.from("stocks").upsert(stockMasterList, { onConflict: "symbol" });
+
+      const snapshotItems = stocks.map((s: any) => {
+        const dataCopy = { ...s };
+        delete dataCopy.symbol;
+        delete dataCopy.ticker;
+        delete dataCopy.name;
+        delete dataCopy.logoId;
+
+        return {
+          symbol: s.symbol,
+          snapshot_date: targetDate,
+          category,
+          data: dataCopy,
+          created_at: new Date().toISOString()
+        };
+      });
+
+      await supabase.from("stock_snapshots").upsert(snapshotItems, { onConflict: "symbol,snapshot_date,category" });
+    } catch (dbWriteErr) {
+      console.error("Failed to save snapshots to Supabase:", dbWriteErr);
+    }
+  }
+
+  return stocks;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
       category = "overview",
-      snapshotDate = "latest"
+      snapshotDate = "latest",
+      pageIndex = 0,
+      pageSize = 25,
+      sortBy = "market_cap_basic",
+      sortOrder = "desc",
+      search = "",
+      selectedSector = ""
     } = body;
 
-    // We always request all unique columns so they are always cached and available for sorting/filtering in any tab view
     const columns = ALL_UNIQUE_COLUMNS;
-
     const targetDate = snapshotDate === "latest" ? new Date().toISOString().split("T")[0] : snapshotDate;
 
     let stocks: any[] = [];
@@ -151,16 +248,23 @@ export async function POST(request: Request) {
             // If it is now after 16:00 WIB, and the cache was created before 16:00 WIB, we force fetch/upsert
             const needsClosingUpdate = currentWibTimeVal >= 1600 && cacheWibTimeVal < 1600;
 
-            if (!needsClosingUpdate) {
-              stocks = dbData.map((row: any) => ({
-                symbol: row.symbol,
-                ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
-                name: row.stocks?.name || row.symbol.replace("IDX:", ""),
-                logoId: row.stocks?.logo_id || "",
-                sector: row.stocks?.sector || "",
-                ...row.data
-              }));
-              fetchedFromDb = true;
+            // Serve cached data first
+            stocks = dbData.map((row: any) => ({
+              symbol: row.symbol,
+              ticker: row.stocks?.ticker || row.symbol.replace("IDX:", ""),
+              name: row.stocks?.name || row.symbol.replace("IDX:", ""),
+              logoId: row.stocks?.logo_id || "",
+              sector: row.stocks?.sector || "",
+              ...row.data
+            }));
+            fetchedFromDb = true;
+
+            // If we need the final 16:00 closing prices, trigger refresh in the background
+            if (needsClosingUpdate) {
+              console.log("Triggering 16:00 WIB closing cache refresh in background...");
+              fetchTradingViewAndUpsert(targetDate, category, columns).catch(e => {
+                console.error("Background cache refresh failed:", e);
+              });
             }
           }
         }
@@ -171,135 +275,61 @@ export async function POST(request: Request) {
 
     // 2. Fetch from TradingView directly if not found in DB
     if (!fetchedFromDb) {
-      const payload = {
-        columns,
-        filter: [{ left: "is_primary", operation: "equal", right: true }],
-        ignore_unknown_fields: false,
-        options: { lang: "en" },
-        range: [0, 950], // Fetch all idx stocks to cache
-        sort: { sortBy: "market_cap_basic", sortOrder: "desc" },
-        markets: ["indonesia"],
-        filter2: {
-          operator: "and",
-          operands: [
-            {
-              operation: {
-                operator: "or",
-                operands: [
-                  {
-                    operation: {
-                      operator: "and",
-                      operands: [
-                        { expression: { left: "type", operation: "equal", right: "stock" } },
-                        { expression: { left: "typespecs", operation: "has", right: ["common"] } }
-                      ]
-                    }
-                  },
-                  {
-                    operation: {
-                      operator: "and",
-                      operands: [
-                        { expression: { left: "type", operation: "equal", right: "stock" } },
-                        { expression: { left: "typespecs", operation: "has", right: ["preferred"] } }
-                      ]
-                    }
-                  },
-                  {
-                    operation: {
-                      operator: "and",
-                      operands: [{ expression: { left: "type", operation: "equal", right: "dr" } }]
-                    }
-                  },
-                  {
-                    operation: {
-                      operator: "and",
-                      operands: [
-                        { expression: { left: "type", operation: "equal", right: "fund" } },
-                        { expression: { left: "typespecs", operation: "has_none_of", right: ["etf", "mutual"] } }
-                      ]
-                    }
-                  }
-                ]
-              }
-            },
-            { expression: { left: "typespecs", operation: "has_none_of", right: ["pre-ipo"] } }
-          ]
-        }
-      };
-
-      const response = await fetch("https://scanner.tradingview.com/indonesia/scan?label-product=screener-stock", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`TradingView Scan API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      stocks = data.data.map((item: any) => {
-        const mapped: Record<string, any> = {
-          symbol: item.s,
-          ticker: item.d[0]?.name || item.s.replace("IDX:", ""),
-          name: item.d[0]?.description || item.d[0]?.name || item.s.replace("IDX:", ""),
-          logoId: item.d[0]?.logoid || item.d[0]?.logo?.logoid || "",
-        };
-
-        columns.forEach((col, idx) => {
-          if (col === "ticker-view") return;
-          mapped[col] = item.d[idx];
-        });
-
-        return mapped;
-      });
-
-      // 3. Write background cache to Supabase
-      if (supabaseUrl && supabaseKey && stocks.length > 0) {
-        try {
-          const stockMasterList = stocks.map(s => ({
-            symbol: s.symbol,
-            ticker: s.ticker,
-            name: s.name,
-            logo_id: s.logoId,
-            sector: s.sector || "",
-            type: s.type || "stock",
-            updated_at: new Date().toISOString()
-          }));
-
-          await supabase.from("stocks").upsert(stockMasterList, { onConflict: "symbol" });
-
-          const snapshotItems = stocks.map(s => {
-            const dataCopy = { ...s };
-            delete dataCopy.symbol;
-            delete dataCopy.ticker;
-            delete dataCopy.name;
-            delete dataCopy.logoId;
-
-            return {
-              symbol: s.symbol,
-              snapshot_date: targetDate,
-              category,
-              data: dataCopy,
-              created_at: new Date().toISOString()
-            };
-          });
-
-          await supabase.from("stock_snapshots").upsert(snapshotItems, { onConflict: "symbol,snapshot_date,category" });
-        } catch (dbWriteErr) {
-          console.error("Failed to save snapshots to Supabase:", dbWriteErr);
-        }
-      }
+      stocks = await fetchTradingViewAndUpsert(targetDate, category, columns);
     }
 
-    // Return the entire list to the client so it can do instant client-side filtering, sorting, pagination
+    // 3. Server-Side Filtering, Searching, and Sorting
+    let processed = [...stocks];
+
+    // Filter by Sector
+    if (selectedSector) {
+      processed = processed.filter(s => s.sector === selectedSector);
+    }
+
+    // Filter by Search Query
+    if (search) {
+      const q = search.toLowerCase();
+      processed = processed.filter(s => 
+        s.ticker.toLowerCase().includes(q) || 
+        s.name.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort by Field
+    const isRatingField = sortBy.includes("Rating");
+    processed.sort((a, b) => {
+      let valA = a[sortBy];
+      let valB = b[sortBy];
+
+      if (isRatingField) {
+        valA = getRatingScore(valA);
+        valB = getRatingScore(valB);
+        return sortOrder === "asc" ? valB - valA : valA - valB;
+      }
+
+      if (valA === undefined || valA === null) return 1;
+      if (valB === undefined || valB === null) return -1;
+
+      if (typeof valA === "number" && typeof valB === "number") {
+        return sortOrder === "desc" ? valB - valA : valA - valB;
+      }
+
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return sortOrder === "desc"
+        ? strB.localeCompare(strA)
+        : strA.localeCompare(strB);
+    });
+
+    const totalCount = processed.length;
+
+    // Slice Paginated Page
+    const start = pageIndex * pageSize;
+    const paginated = processed.slice(start, start + pageSize);
+
     return NextResponse.json({
-      totalCount: stocks.length,
-      stocks
+      totalCount,
+      stocks: paginated
     });
   } catch (error: any) {
     console.error("Scan API Error:", error);
