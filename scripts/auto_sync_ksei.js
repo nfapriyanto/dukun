@@ -122,9 +122,13 @@ async function syncMonth(year, month) {
     await downloadFile(url, zipPath);
     console.log('-> Download successful. Extracting archive...');
 
-    // Extract using Windows PowerShell Expand-Archive natively
+    // Extract archive cross-platform (PowerShell on Windows, unzip on Linux)
     if (!fs.existsSync(extractPath)) fs.mkdirSync(extractPath);
-    execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractPath}' -Force"`);
+    if (process.platform === 'win32') {
+      execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractPath}' -Force"`);
+    } else {
+      execSync(`unzip -o -q "${zipPath}" -d "${extractPath}"`);
+    }
 
     // Find txt file in extracted folder
     const files = fs.readdirSync(extractPath);
