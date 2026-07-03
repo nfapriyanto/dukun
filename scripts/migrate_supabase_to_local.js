@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+
+// Mock WebSocket for Node.js < 22 environments where @supabase/supabase-js demands it
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = class {};
+}
+
 const { createClient } = require('@supabase/supabase-js');
 
 // 1. Load credentials from .env.local
