@@ -60,6 +60,11 @@ export default function ScreenerDashboard() {
   const [compareStocks, setCompareStocks] = useState<any[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
 
+  // Sync States
+  const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncError, setSyncError] = useState<string | null>(null);
+
   // Dropdown States
   const [sectorOpen, setSectorOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
@@ -78,6 +83,44 @@ export default function ScreenerDashboard() {
     "Finance", "Energy", "Basic Materials", "Industrials", "Consumer Non-Cyclicals",
     "Consumer Cyclicals", "Healthcare", "Technology", "Telecommunications", "Utilities"
   ];
+
+  const triggerSync = () => {
+    setSyncProgress(0);
+    setSyncMessage("Connecting to sync stream...");
+    setSyncError(null);
+    
+    const eventSource = new EventSource("/api/sync");
+    
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.error) {
+        setSyncError(data.error);
+        eventSource.close();
+        setTimeout(() => setSyncProgress(null), 4000);
+      } else {
+        if (data.progress !== undefined) {
+          setSyncProgress(data.progress);
+        }
+        if (data.message) {
+          setSyncMessage(data.message);
+        }
+        if (data.progress === 100) {
+          eventSource.close();
+          setTimeout(() => {
+            setSyncProgress(null);
+            fetchScanData();
+          }, 2000);
+        }
+      }
+    };
+    
+    eventSource.onerror = (err) => {
+      console.error("Sync EventSource error:", err);
+      setSyncError("Connection to sync stream lost.");
+      eventSource.close();
+      setTimeout(() => setSyncProgress(null), 4000);
+    };
+  };
 
   // Close dropdowns on click outside
   useEffect(() => {
@@ -195,6 +238,61 @@ export default function ScreenerDashboard() {
     }
   }, [compareMode, compareDateA, compareDateB]);
 
+  // Client-side processing for Compare Mode (and simple fallback for normal mode)
+  const processedStocks = useMemo(() => {
+    if (!compareMode) return stocks;
+
+    let filtered = [...compareStocks];
+
+    // 1. Sector Filter
+    if (selectedSector) {
+      filtered = filtered.filter(s => s.sector === selectedSector);
+    }
+
+    // 2. Search Text
+    if (search) {
+      const sLower = search.toLowerCase();
+      filtered = filtered.filter(
+        s => s.ticker.toLowerCase().includes(sLower) || s.name.toLowerCase().includes(sLower)
+      );
+    }
+
+    // 3. Sorting (Custom ratings and numerical/alphabetical sorting)
+    const isRatingField = sortField.includes("Rating");
+    filtered.sort((a, b) => {
+      let valA = a[sortField];
+      let valB = b[sortField];
+
+      if (isRatingField) {
+        valA = getRatingScore(valA);
+        valB = getRatingScore(valB);
+        return sortOrder === "asc" ? valB - valA : valA - valB;
+      }
+
+      if (valA === undefined || valA === null) return 1;
+      if (valB === undefined || valB === null) return -1;
+
+      if (typeof valA === "number" && typeof valB === "number") {
+        return sortOrder === "desc" ? valB - valA : valA - valB;
+      }
+
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return sortOrder === "desc"
+        ? strB.localeCompare(strA)
+        : strA.localeCompare(strB);
+    });
+
+    return filtered;
+  }, [compareMode, compareStocks, stocks, selectedSector, search, sortField, sortOrder]);
+
+  const paginatedStocks = useMemo(() => {
+    if (!compareMode) return stocks;
+
+    const start = pageIndex * pageSize;
+    return processedStocks.slice(start, start + pageSize);
+  }, [compareMode, processedStocks, stocks, pageIndex, pageSize]);
+
   const handleRowClick = (stock: Stock) => {
     router.push(`/${stock.ticker}`);
   };
@@ -273,6 +371,7 @@ export default function ScreenerDashboard() {
   const activeTabConfig = TABS.find(t => t.id === activeTab) || TABS[0];
   const isTabLoading = loading && stocks.length === 0;
   const sortLabel = COLUMN_METADATA[sortField]?.label || sortField;
+  const displayTotalCount = compareMode ? processedStocks.length : totalCount;
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300 antialiased relative">
@@ -290,15 +389,24 @@ export default function ScreenerDashboard() {
             </div>
             <div>
               <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-                IDX Stock Screener
+                dukunmuu
               </span>
               <span className="ml-2 text-xs font-mono px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-500">
-                PRO TERMINAL
+                PRO
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+              onClick={triggerSync}
+              disabled={syncProgress !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncProgress !== null ? "animate-spin" : ""}`} />
+              <span>Sync Data</span>
+            </button>
+
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800/80 text-xs">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -508,10 +616,30 @@ export default function ScreenerDashboard() {
 
                   {compareMode ? (
                     <>
-                      <th className="py-4 px-6 text-right font-semibold">Price ({compareDateA})</th>
-                      <th className="py-4 px-6 text-right font-semibold">Price ({compareDateB})</th>
-                      <th className="py-4 px-6 text-right font-semibold">Diff (Rp)</th>
-                      <th className="py-4 px-6 text-right font-semibold">Diff (%)</th>
+                      <th className="py-4 px-6 text-right font-semibold cursor-pointer hover:text-zinc-200" onClick={() => handleSort("priceA")}>
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Price ({compareDateA})</span>
+                          <ArrowUpDown className={`h-3 w-3 ${sortField === "priceA" ? "text-emerald-400" : "text-zinc-650"}`} />
+                        </div>
+                      </th>
+                      <th className="py-4 px-6 text-right font-semibold cursor-pointer hover:text-zinc-200" onClick={() => handleSort("priceB")}>
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Price ({compareDateB})</span>
+                          <ArrowUpDown className={`h-3 w-3 ${sortField === "priceB" ? "text-emerald-400" : "text-zinc-650"}`} />
+                        </div>
+                      </th>
+                      <th className="py-4 px-6 text-right font-semibold cursor-pointer hover:text-zinc-200" onClick={() => handleSort("changeAmount")}>
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Diff (Rp)</span>
+                          <ArrowUpDown className={`h-3 w-3 ${sortField === "changeAmount" ? "text-emerald-400" : "text-zinc-650"}`} />
+                        </div>
+                      </th>
+                      <th className="py-4 px-6 text-right font-semibold cursor-pointer hover:text-zinc-200" onClick={() => handleSort("changePct")}>
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Diff (%)</span>
+                          <ArrowUpDown className={`h-3 w-3 ${sortField === "changePct" ? "text-emerald-400" : "text-zinc-650"}`} />
+                        </div>
+                      </th>
                     </>
                   ) : (
                     activeTabConfig.columns.slice(1).map(col => {
@@ -564,7 +692,7 @@ export default function ScreenerDashboard() {
                       ))}
                     </tr>
                   ))
-                ) : (compareMode ? compareStocks : stocks).length === 0 ? (
+                ) : paginatedStocks.length === 0 ? (
                   <tr>
                     <td colSpan={compareMode ? 5 : activeTabConfig.columns.length} className="py-16 text-center text-zinc-500">
                       <Info className="h-8 w-8 mx-auto mb-3 text-zinc-600" />
@@ -573,7 +701,7 @@ export default function ScreenerDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  (compareMode ? compareStocks : stocks).map(stock => (
+                  paginatedStocks.map(stock => (
                     <tr
                       key={stock.symbol}
                       onClick={() => handleRowClick(stock)}
@@ -695,52 +823,65 @@ export default function ScreenerDashboard() {
           </div>
 
           {/* Pagination Controls */}
-          {!compareMode && (
-            <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-zinc-900 bg-zinc-950/90 gap-4 text-xs font-mono text-zinc-500">
-              <div className="flex items-center gap-4">
-                <span>
-                  Showing <strong className="text-zinc-300">{pageIndex * pageSize + 1}</strong> to{" "}
-                  <strong className="text-zinc-300">{Math.min((pageIndex + 1) * pageSize, totalCount)}</strong> of{" "}
-                  <strong className="text-zinc-300">{totalCount}</strong> results
-                </span>
-                <div className="flex items-center gap-2">
-                  <span>Rows:</span>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => { setPageSize(Number(e.target.value)); setPageIndex(0); }}
-                    className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 outline-none cursor-pointer"
-                  >
-                    {[25, 50, 100].map(sz => (
-                      <option key={sz} value={sz}>{sz}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
+          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-zinc-900 bg-zinc-950/90 gap-4 text-xs font-mono text-zinc-500">
+            <div className="flex items-center gap-4">
+              <span>
+                Showing <strong className="text-zinc-300">{displayTotalCount === 0 ? 0 : pageIndex * pageSize + 1}</strong> to{" "}
+                <strong className="text-zinc-300">{Math.min((pageIndex + 1) * pageSize, displayTotalCount)}</strong> of{" "}
+                <strong className="text-zinc-300">{displayTotalCount}</strong> results
+              </span>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPageIndex(p => Math.max(0, p - 1))}
-                  disabled={pageIndex === 0 || loading}
-                  className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                <span>Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPageIndex(0); }}
+                  className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 outline-none cursor-pointer"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="px-2">
-                  Page <strong className="text-zinc-300">{pageIndex + 1}</strong> of{" "}
-                  <strong className="text-zinc-300">{Math.ceil(totalCount / pageSize)}</strong>
-                </span>
-                <button
-                  onClick={() => setPageIndex(p => p + 1)}
-                  disabled={(pageIndex + 1) * pageSize >= totalCount || loading}
-                  className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                  {[25, 50, 100].map(sz => (
+                    <option key={sz} value={sz}>{sz}</option>
+                  ))}
+                </select>
               </div>
             </div>
-          )}
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPageIndex(p => Math.max(0, p - 1))}
+                disabled={pageIndex === 0 || (compareMode ? compareLoading : loading)}
+                className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="px-2">
+                Page <strong className="text-zinc-300">{pageIndex + 1}</strong> of{" "}
+                <strong className="text-zinc-300">{Math.ceil(displayTotalCount / pageSize)}</strong>
+              </span>
+              <button
+                onClick={() => setPageIndex(p => p + 1)}
+                disabled={(pageIndex + 1) * pageSize >= displayTotalCount || (compareMode ? compareLoading : loading)}
+                className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </section>
       </main>
+
+      {/* Syncing Progress Banner */}
+      {syncProgress !== null && (
+        <div className="fixed bottom-6 right-6 z-50 bg-zinc-900/95 border border-zinc-800 p-4 rounded-xl shadow-2xl flex flex-col gap-2 w-80 backdrop-blur">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-bold text-zinc-300">Syncing database...</span>
+            <span className="font-mono text-emerald-400 font-semibold">{syncProgress}%</span>
+          </div>
+          <div className="w-full bg-zinc-850 h-1.5 rounded-full overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-300" style={{ width: `${syncProgress}%` }} />
+          </div>
+          <span className="text-[10px] font-mono text-zinc-500 truncate">{syncMessage}</span>
+          {syncError && <span className="text-[10px] font-mono text-rose-450 mt-1">{syncError}</span>}
+        </div>
+      )}
     </div>
   );
 }
